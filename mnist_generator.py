@@ -27,7 +27,7 @@ encoder.add(MaxPooling2D((2, 2), padding='same'))
 encoder.add(Flatten())
 
 units = 16
-encoder.add(Dense(units, activation="tanh"))
+encoder.add(Dense(units, activation="sigmoid"))
 
 encoded_img = encoder(input_img)
 
@@ -53,10 +53,11 @@ decoder_generator.compile(optimizer='adam', loss='binary_crossentropy')
 
 # Обучение модели
 autoencoder.fit(x_train, x_train,
-                epochs=20,
+                epochs=20, 
                 batch_size=128,
                 shuffle=True,
                 validation_data=(x_test, x_test))
+
 
 # Проверка автоэнкодера
 decoded_imgs = autoencoder.predict(x_test)
@@ -84,7 +85,7 @@ plt.show()
 
 
 # Генерация новых изображений
-decoded_imgs = decoder_generator.predict(np.random.random((100, units))*2-1)
+decoded_imgs = decoder_generator.predict(np.random.random((100, units)))
 plt.figure(figsize=(20, 4))
 for i in range(n):
     rand_num = randint(0, len(decoded_imgs))
