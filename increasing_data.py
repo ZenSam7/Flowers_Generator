@@ -1,6 +1,7 @@
 from keras.utils import img_to_array, load_img
 from keras.preprocessing.image import ImageDataGenerator
 import os
+import glob
 
 data_augment = ImageDataGenerator(
         rotation_range=40,
@@ -16,9 +17,11 @@ path = "flowers"
 save_to_dir = "new_flowers"
 increase_coeff = 20  # Во сколько раз увеличиваем датасет
 
-count_prepearing_images = 1
+
 os.mkdir(save_to_dir)
 
+count_prepearing_images = 1
+count_all_images = sum([len(os.listdir("flowers/" + type_flower)) for type_flower in os.listdir("flowers")])
 for directory_name in os.listdir(path):
     os.mkdir(save_to_dir + "\\" + directory_name)  # Сохраняем ярлыки (lable)
 
@@ -39,5 +42,6 @@ for directory_name in os.listdir(path):
             if i == increase_coeff:
                 break
 
-        print(directory_name, count_prepearing_images, f"{int(count_prepearing_images/1671*100)}%")
+        print(directory_name, count_prepearing_images,
+              f"{int(count_prepearing_images / count_all_images * 100)}%")
         count_prepearing_images += 1
