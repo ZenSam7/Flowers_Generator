@@ -1,4 +1,3 @@
-
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models, datasets
@@ -12,14 +11,19 @@ train_images = train_images.astype('float32') / 255.
 test_images = test_images.astype('float32') / 255.
 
 # Преобразование изображений в вектора размерности 784 (28x28)
-train_images = train_images.reshape(train_images.shape[0], 784)
-test_images = test_images.reshape(test_images.shape[0], 784)
+train_images = train_images.reshape(train_images.shape[0], 28, 28, 1)
+test_images = test_images.reshape(test_images.shape[0], 28, 28, 1)
 
 # Создание вариационного автоэнкодера
-latent_dim = 2
+latent_dim = 10  # Увеличим размерность скрытого пространства
 
-encoder_inputs = tf.keras.Input(shape=(784,))
-x = layers.Dense(256, activation='relu')(encoder_inputs)
+# Encoder
+encoder_inputs = tf.keras.Input(shape=(28, 28, 1))
+x = layers.Conv2D(32, 3, activation='relu', padding='same')(encoder_inputs)
+x = layers.MaxPooling2D(pool_size=(2, 2))(x)
+x = layers.Conv2D(64, 3, activation='relu', padding='same')(x)
+x = layers.MaxPooling2D(pool_size=(2, 2))(x)
+x = layers.Flatten()(x)
 z_mean = layers.Dense(latent_dim)(x)
 z_log_var = layers.Dense(latent_dim)(x)
 
@@ -34,28 +38,35 @@ z = layers.Lambda(sampling)([z_mean, z_log_var])
 
 encoder = tf.keras.Model(encoder_inputs, [z_mean, z_log_var, z], name='encoder')
 
+# Decoder
 latent_inputs = tf.keras.Input(shape=(latent_dim,))
-x = layers.Dense(256, activation='relu')(latent_inputs)
-outputs = layers.Dense(784, activation='sigmoid')(x)
+x = layers.Dense(7 * 7 * 64, activation='relu')(latent_inputs)
+x = layers.Reshape((7, 7, 64))(x)
+x = layers.Conv2DTranspose(64, 3, activation='relu', padding='same')(x)
+x = layers.UpSampling2D((2, 2))(x)
+x = layers.Conv2DTranspose(32, 3, activation='relu', padding='same')(x)
+x = layers.UpSampling2D((2, 2))(x)
+decoder_outputs = layers.Conv2DTranspose(1, 3, activation='sigmoid', padding='same')(x)
 
-decoder = tf.keras.Model(latent_inputs, outputs, name='decoder')
+decoder = tf.keras.Model(latent_inputs, decoder_outputs, name='decoder')
 
 outputs = decoder(encoder(encoder_inputs)[2])
 vae = tf.keras.Model(encoder_inputs, outputs, name='vae')
 
 # Функция потерь вариационного автоэнкодера
+reconstruction_loss = tf.reduce_mean(tf.keras.losses.binary_crossentropy(encoder_inputs, outputs))
 kl_loss = -0.5 * tf.reduce_mean(z_log_var - tf.square(z_mean) - tf.exp(z_log_var) + 1)
-vae.add_loss(kl_loss)
+vae_loss = reconstruction_loss + kl_loss
 
 # Компиляция модели
+vae.add_loss(vae_loss)
 vae.compile(optimizer='adam')
 
 # Обучение модели
-vae.fit(train_images, train_images, epochs=15, batch_size=32)
+vae.fit(train_images, epochs=10, batch_size=64)
 
 # Генерация изображений с помощью вариационного автоэнкодера
-encoded_imgs = encoder.predict(test_images)[2]
-decoded_imgs = decoder.predict(encoded_imgs)
+decoded_imgs = vae.predict(test_images)
 
 # Отображение оригинальных и восстановленных изображений
 n = 10
