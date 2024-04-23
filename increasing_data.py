@@ -4,7 +4,7 @@ import os
 import glob
 
 data_augment = ImageDataGenerator(
-        rotation_range=40,
+        rotation_range=20,
         width_shift_range=0.1,
         height_shift_range=0.1,
         shear_range=0.0,
@@ -27,7 +27,10 @@ for directory_name in os.listdir(path):
 
     for image_name in os.listdir(f"{path}\\{directory_name}"):
         # Загружаем изображение
-        single_img = load_img(f"{path}\\{directory_name}\\{image_name}")
+        try:
+            single_img = load_img(f"{path}\\{directory_name}\\{image_name}")
+        except:
+            continue
         image_array = img_to_array(single_img)
         image_array = image_array.reshape((1,) + image_array.shape)
 
