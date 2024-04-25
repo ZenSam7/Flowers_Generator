@@ -4,7 +4,7 @@ import os
 import glob
 
 data_augment = ImageDataGenerator(
-        rotation_range=20,
+        rotation_range=30,
         width_shift_range=0.1,
         height_shift_range=0.1,
         shear_range=0.0,
@@ -15,7 +15,7 @@ data_augment = ImageDataGenerator(
 
 path = "flowers"
 save_to_dir = "new_flowers"
-increase_coeff = 20  # Во сколько раз увеличиваем датасет
+increase_coeff = 30  # Во сколько раз увеличиваем датасет
 
 
 os.mkdir(save_to_dir)
