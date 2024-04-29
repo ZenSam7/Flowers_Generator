@@ -15,7 +15,7 @@ data_augment = ImageDataGenerator(
 
 path = "flowers"
 save_to_dir = "new_flowers"
-increase_coeff = 30  # Во сколько раз увеличиваем датасет
+increase_coeff = 10  # Во сколько раз увеличиваем датасет
 
 
 os.mkdir(save_to_dir)
