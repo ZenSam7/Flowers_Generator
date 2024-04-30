@@ -11,9 +11,9 @@
 - при помощи Dense сжимает и расжимает изображение
 
 - ### Свёрточный Автоэнкодер (Convolutional AutoEncoder | CAE)
-- в место Dense используемм свёртки (Conv2D) и развёртки (Conv2DTranspose) _(я пока тут)_
+- в место Dense используемм свёртки (Conv2D) и развёртки (Conv2DTranspose)
 
-- ### Генеративный Свёрточный Автоэнкодер (Generative Convolutional AutoEncoder | GCAE) 
+- ### Генеративный Свёрточный Автоэнкодер (Generative Convolutional AutoEncoder | GCAE)  _(я пока тут)_
 - энкодер и декодер разделены, можно подать шум на вход декодера и получить картинку
 
 - ### Вариационный Свёрточный Автоэнкодер (Variational Convolutional AutoEncoder | VCAE)
