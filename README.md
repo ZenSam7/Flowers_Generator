@@ -8,19 +8,19 @@
 ####  
 
 ### Примерная схема эволюции моего ~~покемона~~ автоэнкодера:
-- ### Автоэнкодер (AutoEncoder | AE)
+- ### ~~Автоэнкодер (AutoEncoder | AE)~~
 - при помощи Dense сжимает и расжимает изображение
 
-- ### Свёрточный Автоэнкодер (Convolutional AutoEncoder | CAE)
+- ### ~~Свёрточный Автоэнкодер (Convolutional AutoEncoder | CAE)~~
 - в место Dense используем свёртки (Conv2D) и развёртки (Conv2DTranspose)
 
-- ### Генеративный Свёрточный Автоэнкодер (Generative Convolutional AutoEncoder | GCAE)
+- ### ~~Генеративный Свёрточный Автоэнкодер (Generative Convolutional AutoEncoder | GCAE)~~
 - энкодер и декодер разделены, можно подать шум на вход декодера и получить картинку
 
-- ### Вариационный Свёрточный Автоэнкодер (Variational Convolutional AutoEncoder | VCAE)  _(я пока тут)_
+- ### ~~Вариационный Свёрточный Автоэнкодер (Variational Convolutional AutoEncoder | VCAE)~~  
 - контролируем скрытое пространство, чтобы оно приближалось к нормальному распределению
 
-- ### Расширенный Вариационный Свёрточный Автоэнкодер (Conditional Variational Convolutional AutoEncoder | CVCAE) 
+- ### Расширенный Вариационный Свёрточный Автоэнкодер (Conditional Variational Convolutional AutoEncoder | CVCAE) _(я пока тут)_
 - в энкодер и декодер дополнительно подаём ещё и лейблы (aka метки класса (что у нас вообще изображено на картинке))
 
 - ### Генеративно-Состязательная Нейронка (Generative Adversarial Networks | GAN) 
