@@ -2,171 +2,244 @@ from __future__ import print_function, division
 
 import keras.utils
 from keras.datasets import mnist
-from keras.layers import (Input, Dense, Reshape, Flatten, Dropout, multiply, MaxPooling2D,
-                          BatchNormalization, Activation, Embedding, ZeroPadding2D, LeakyReLU, concatenate)
-from keras.layers.convolutional import UpSampling2D, Conv2D
+from keras.layers import *
+from keras.layers.convolutional import UpSampling2D, Conv2D, Conv2DTranspose
 from keras.models import Sequential, Model
-from keras.optimizers import Adam
+from keras.optimizers import Adam, SGD
+from keras import backend as K
 
 import matplotlib.pyplot as plt
 
 import numpy as np
+import os
+
+import tensorflow as tf
+tf = tf.compat.v1
+sess = tf.Session()
+K.set_session(sess)
 
 
 class CGAN():
     def __init__(self):
         # Входные форматы
-        self.img_shape = (28, 28, 1)
-        self.num_classes = 10
-        self.latent_dim = 16
+        self.IMG_SHAPE = (28, 28, 1)
+        self.NUM_CLASSES = 10
+        self.LATENT_DIM = 8
+
+        """
+        Генератор и Дискриминатор
+        """
+        # Если Дискриминатор обыгрывает Генератор, то обучение остановится
+        # Поэтому в train() сть внутренние циклы, чтобы дать фору
+        self.NUM_STEP_LEARN = 5
+
+        # Мучаемся со входами
+        # x_ = tf.placeholder(tf.float32, shape=(None, 28, 28, 1), name="image")
+        # y_ = tf.placeholder(tf.float32, shape=(None, self.NUM_CLASSES), name="label")
+        # z_ = tf.placeholder(tf.float32, shape=(None, self.LATENT_DIM), name="latent_space")
+
+        self.image_inp = Input(shape=self.IMG_SHAPE, name="image")
+        self.label_inp = Input(shape=(self.NUM_CLASSES,), name="label")
+        self.latent_space_inp = Input(shape=(self.LATENT_DIM,), name="latent_space")
 
         # Создаем дискриминатор
-        self.discriminator = self.build_discriminator()
+        self.build_discriminator()
         self.discriminator.compile(
-            loss=['binary_crossentropy'],
-            optimizer=Adam(1e-4),
-            metrics=['accuracy'],
+            loss=["binary_crossentropy"],
+            optimizer=Adam(1e-3),
+            metrics=["accuracy"],
         )
         self.discriminator.summary()
 
         # Создаем генератор
-        self.generator = self.build_generator()
-        self.discriminator.compile(
-            loss=['binary_crossentropy'],
-            optimizer=Adam(1e-3),
-            metrics=['accuracy'],
-        )
+        self.build_generator()
         self.generator.summary()
 
-        # Объединяем их
-        noise = Input(shape=(self.latent_dim,), name="noise_combine")
-        label = Input(shape=(self.num_classes,), name="label_combine")
-        img = self.generator([noise, label])
+        """
+        Модели
+        """
+        # z == latten_space
+        self.generated_z = self.generator([self.latent_space_inp, self.label_inp])
 
-        # В combined мы обучем только Генератор, т.к. чтобы обучить Генератор надо
-        # чтобы градиент прошёл через Дискриминатор (Дискриминатор обучаем отдельно)
-        self.discriminator.trainable = False
+        self.dis_img = self.discriminator([self.image_inp, self.label_inp])
+        self.dis_gen_z = self.discriminator([self.generated_z, self.label_inp])
 
-        valid = self.discriminator([img, label])
+        self.cgan_model = Model([self.latent_space_inp, self.label_inp], self.dis_gen_z, name="CGAN")
+        self.cgan = self.cgan_model([self.latent_space_inp, self.label_inp])
 
-        # Комбинированная модель (генератор и дискриминатор)
-        # Обучает генератор, чтобы обмануть дискриминатор
-        self.combined = Model([noise, label], valid)
-        self.combined.compile(
-            loss=['binary_crossentropy'],
-            optimizer=Adam(1e-3),
-        )
+        """
+        Ошибки
+        """
+        self.optimizer_gen = Adam(5e-4)  # У Генератора больше
+        self.optimizer_dis = Adam(1e-4)  # У Дискриминатора меньше (чтоб не душил Генератор)
+
+        # # Переменные генератора и дискриминаторы (отдельно) для оптимизаторов
+        # self.generator_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "generator")
+        # self.discriminator_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "discriminator")
+
+        # Получаем переменные генератора и дискриминатора
+        self.generator_vars = self.generator.trainable_variables
+        self.discriminator_vars = self.discriminator.trainable_variables
+
+        # Инициализируем
+        # sess.run(tf.global_variables_initializer())
+
+    def step_learn_gen(self, image, label, latent):
+        """Шаг обучения Генератора"""
+        with tf.GradientTape() as gen_tape:
+            # Передаем данные через генератор
+            generated_images = self.generator([latent, label], training=True)
+            # Передаем сгенерированные изображения через дискриминатор
+            dis_output = self.discriminator([generated_images, label], training=False)
+            # Вычисляем потери генератора
+            l_gen = -tf.reduce_mean(tf.math.log(1. - dis_output + 1e-9))
+
+        # Получаем градиенты для генератора
+        grads_gen = gen_tape.gradient(l_gen, self.generator.trainable_variables)
+
+        # Применяем градиенты
+        self.optimizer_gen.apply_gradients(zip(grads_gen, self.generator.trainable_variables))
+
+        return l_gen  # Возвращаем значение потерь
+
+    def step_learn_dis(self, image, label, latent):
+        """Шаг обучения Дискриминатора"""
+        with tf.GradientTape() as dis_tape:
+            # Передаем реальные изображения через дискриминатор
+            dis_real_output = self.discriminator([image, label], training=True)
+            # Генерируем изображения
+            generated_images = self.generator([latent, label], training=False)
+            # Передаем сгенерированные изображения через дискриминатор
+            dis_fake_output = self.discriminator([generated_images, label], training=True)
+            # Вычисляем потери дискриминатора
+            l_dis = 0.5 * (tf.reduce_mean(-tf.math.log(dis_real_output + 1e-9)) +
+                           tf.reduce_mean(-tf.math.log(1. - dis_fake_output + 1e-9)))
+
+        # Получаем градиенты для дискриминатора
+        grads_dis = dis_tape.gradient(l_dis, self.discriminator.trainable_variables)
+
+        # Применяем градиенты
+        self.optimizer_dis.apply_gradients(zip(grads_dis, self.discriminator.trainable_variables))
+
+        return l_dis  # Возвращаем значение потерь
 
     def build_generator(self) -> Model:
         # Мучаемся со входом
-        latent_space = Input(shape=(self.latent_dim,), name="latent_space")
+        with tf.variable_scope("generator"):
+            latent_space_and_label = concatenate([self.latent_space_inp, self.label_inp])
 
-        label = Input(shape=(self.num_classes,), name="label")
+            # Сам Генератор
+            x = Dense(7**2*64, activation=LeakyReLU())(latent_space_and_label)
+            x = Reshape((7, 7, 64))(x)
 
-        latent_space_and_label = concatenate([latent_space, label])
+            for i in [64, 16]:
+                x = Dropout(0.1)(x)
+                x = Conv2D(i, (3, 3), activation=LeakyReLU(), padding="same")(x)
+                x = Conv2D(i, (3, 3), activation=LeakyReLU(), padding="same")(x)
+                x = UpSampling2D()(x)
 
-        # Сам Генератор
-        x = Dense(7 * 7, activation=LeakyReLU())(latent_space_and_label)
-        x = Reshape((7, 7, 1))(x)
+            x = Conv2D(1, (7, 7), activation="sigmoid", padding="same")(x)
+            x = Reshape(self.IMG_SHAPE)(x)
 
-        x = Conv2D(4, (3, 3), activation=LeakyReLU(), padding="same")(x)
-        x = Conv2D(8, (3, 3), activation=LeakyReLU(), padding="same")(x)
-        x = UpSampling2D()(x)
-
-        x = Conv2D(16, (5, 5), activation=LeakyReLU(), padding="same")(x)
-        x = Conv2D(32, (5, 5), activation=LeakyReLU(), padding="same")(x)
-        x = UpSampling2D()(x)
-
-        x = Conv2D(16, (7, 7), activation=LeakyReLU(), padding="same")(x)
-        x = Conv2D(32, (7, 7), activation=LeakyReLU(), padding="same")(x)
-
-        x = Conv2D(1, (9, 9), activation="tanh", padding="same")(x)
-        output_img = Reshape(self.img_shape)(x)
-
-        return Model([latent_space, label], output_img)
+            self.generator = Model([self.latent_space_inp, self.label_inp], x, name="generator")
 
     def build_discriminator(self) -> Model:
-        # Использауем Эмбеддинг
-        img = Input(self.img_shape, name="img")
-        img_flatten = Flatten()(img)
+        with tf.variable_scope("discriminator"):
+            # Объединяем картинку с лейблами
+            repeat_n = int(np.prod(self.IMG_SHAPE))
+            units_repeat = RepeatVector(repeat_n)(self.label_inp)
+            units_repeat = Reshape([*self.IMG_SHAPE[:-1], self.NUM_CLASSES])(units_repeat)
 
-        label = Input(shape=(self.num_classes,), name="label")
+            img_and_label = concatenate([units_repeat, self.image_inp])
 
-        img_and_label = concatenate([label, img_flatten])
-        x = Dense(np.prod(self.img_shape))(img_and_label)
-        x = Reshape(self.img_shape)(x)
+            # Сам Дискриминатор
+            x = img_and_label
+            for i in range(2, 5):
+                x = Dropout(0.1)(x)
+                x = Conv2D(2**i, (3, 3), activation=LeakyReLU(), padding="same")(x)
+                x = MaxPooling2D()(x)
 
-        for i in range(4, 0, -1):
-            x = Dropout(0.1)(x)
-            x = Conv2D(2**i, (2*i+1, 2*i+1), activation=LeakyReLU(), padding="same")(x)
-            x = Conv2D(2**i, (2*i+1, 2*i+1), activation=LeakyReLU(), padding="same")(x)
-            x = MaxPooling2D()(x)
+            x = Flatten()(x)
+            x = Dense(1, activation="sigmoid")(x)
 
-        x = Flatten()(x)
-        validity = Dense(1, activation="sigmoid")(x)
+            self.discriminator = Model([self.image_inp, self.label_inp], x, name="discriminator")
 
-        return Model([img, label], validity)
-
-    def train(self, epochs, batch_size=128, sample_interval=50):
-
+    def batch_generator(self, batch_size):
+        """Декоратор для генератора батчей"""
         # Загружаем набор данных
-        (X_train, y_train), (_, _) = mnist.load_data()
+        (x, y), (x_, y_) = mnist.load_data()
 
-        # Конфигурируем входные данные
-        X_train = (X_train.astype(np.float32) - 127.5) / 127.5
-        X_train = np.expand_dims(X_train, axis=3)
+        # Объединяем всё (куда добру пропадать)
+        x = np.append(x, x_, axis=0)
+        y = np.append(y, y_, axis=0)
 
-        y_train = y_train.reshape(-1, 1)
-        y_train = keras.utils.to_categorical(y_train, self.num_classes)
+        # Конфигурируем данные
+        x = x.astype(np.float32) / 255.
+        x = np.expand_dims(x, axis=3)
 
+        y = y.reshape(-1, 1)
+        y = keras.utils.to_categorical(y, self.NUM_CLASSES)
+
+        n_batches = x.shape[0] // batch_size
+
+        # Замыкание
+        while True:
+            # Перед игрой тасуем колоду
+            idxs = np.random.permutation(y.shape[0])
+            x = x[idxs]
+            y = y[idxs]
+
+            for i in range(n_batches - 1):
+                batch_x = x[batch_size * i: batch_size * (i + 1)]
+                batch_y = y[batch_size * i: batch_size * (i + 1)]
+                noise = np.random.normal(0, 1, (batch_size, self.LATENT_DIM))
+                yield batch_x, batch_y, noise
+
+    def train(self, epochs, batch_size=128, sample_interval=100):
         # Просто единицы и нули для Дискриминатора
+        global loss_dis, loss_gen
         valid = np.ones((batch_size, 1))
         fake = np.zeros((batch_size, 1))
 
-        for epoch in range(epochs):
+        get_batch = self.batch_generator(batch_size)
 
-            # ---------------------
+        for iter_learn in range(epochs):
+            # -------------------------
             #  Обучение дискриминатора
-            # ---------------------
+            # -------------------------
+            for _ in range(self.NUM_STEP_LEARN):
+                imgs, labels, noise = next(get_batch)
+                loss_dis = self.step_learn_dis(imgs, labels, noise)
 
-            # Выбираем случайный пакет картинок
-            idx = np.random.randint(0, X_train.shape[0], batch_size)
-            imgs, labels = X_train[idx], y_train[idx]
-
-            # Генерируем пакет новых картинок
-            noise = np.random.normal(0, 1, (batch_size, self.latent_dim))
-            gen_imgs = self.generator.predict([noise, labels], verbose=False)
-
-            # Обучаем дискриминатор распознавать настоящие и сгенерированные изображения
-            dis_loss_real = self.discriminator.train_on_batch([imgs, labels], valid)
-            dis_loss_fake = self.discriminator.train_on_batch([gen_imgs, labels], fake)
-            dis_loss = 0.5 * np.add(dis_loss_real, dis_loss_fake)
+                # Если Дискриминатор обыгрывает Генератор, то обучение остановится
+                if loss_dis < 1.0:
+                    break
 
             # ---------------------
             #  Обучение генератора
             # ---------------------
+            for _ in range(self.NUM_STEP_LEARN):
+                imgs, labels, noise = next(get_batch)
+                loss_gen = self.step_learn_gen(imgs, labels, noise)
 
-            # Случайная метка
-            sampled_labels = np.random.randint(0, 10, batch_size).reshape(-1, 1)
-            sampled_labels = keras.utils.to_categorical(sampled_labels, self.num_classes)
-
-            # Обучаем генератор (но не дискриминатор)
-            gen_loss = self.combined.train_on_batch([noise, sampled_labels], valid)
+                # Если Генератор сильно обыгрывает, то обучение остановится
+                if loss_gen > 0.5:
+                    break
 
             # Сохраняем генерируемые образцы
-            if epoch % sample_interval == 0:
-                self.sample_images(epoch)
+            if iter_learn % sample_interval == 0:
+                self.sample_images(iter_learn)
 
                 # Вывод прогресса
-                print(f"{epoch} \t"
-                      f"[D loss: {dis_loss[0]:.3f}, acc.: {100*dis_loss[1]:.0f}]\t"
-                      f"[G loss: {gen_loss:.3f}]")
+                print(f"{iter_learn:03} \t"
+                      f"[Dis loss: {loss_dis:.3f}] \t"
+                      f"[Gen loss: {loss_gen:.3f}]")
 
     def sample_images(self, epoch):
         r, c = 2, 5
-        noise = np.random.normal(0, 1, (r * c, self.latent_dim))
+        noise = np.random.normal(0, 1, (r * c, self.LATENT_DIM))
         label = np.arange(0, 10).reshape(-1, 1)
-        sampled_labels = keras.utils.to_categorical(label, self.num_classes)
+        sampled_labels = keras.utils.to_categorical(label, self.NUM_CLASSES)
 
         gen_imgs = self.generator.predict([noise, sampled_labels], verbose=False)
 
@@ -174,18 +247,23 @@ class CGAN():
         gen_imgs = 0.5 * gen_imgs + 0.5
 
         # Делаем картинку
-        fig, axs = plt.subplots(r, c)
+        fig, axs = plt.subplots(r, c, figsize=(13, 6))  # Увеличиваем размер фигуры
         count = 0
         for i in range(r):
             for j in range(c):
                 axs[i, j].imshow(gen_imgs[count, :, :, 0], cmap="gray")
                 axs[i, j].set_title(label[count][0])
                 axs[i, j].axis("off")
+                axs[i, j].set_aspect("equal")  # Сохраняем пропорции картинки
                 count += 1
         fig.savefig("images/%d.png" % epoch)
         plt.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    # Удаляем все прошлые изображения
+    for i in os.listdir("./images"):
+        os.remove(f"./images/{i}")
+
     cgan = CGAN()
-    cgan.train(epochs=20000, batch_size=256, sample_interval=500)
+    cgan.train(epochs=20000, batch_size=512, sample_interval=100)
