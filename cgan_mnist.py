@@ -14,6 +14,7 @@ import numpy as np
 import os
 
 import tensorflow as tf
+
 tf = tf.compat.v1
 sess = tf.Session()
 K.set_session(sess)
@@ -24,33 +25,19 @@ class CGAN():
         # Входные форматы
         self.IMG_SHAPE = (28, 28, 1)
         self.NUM_CLASSES = 10
-        self.LATENT_DIM = 8
+        self.LATENT_DIM = 2
 
         """
         Генератор и Дискриминатор
         """
-        # Если Дискриминатор обыгрывает Генератор, то обучение остановится
-        # Поэтому в train() сть внутренние циклы, чтобы дать фору
-        self.NUM_STEP_LEARN = 5
-
         # Мучаемся со входами
-        # x_ = tf.placeholder(tf.float32, shape=(None, 28, 28, 1), name="image")
-        # y_ = tf.placeholder(tf.float32, shape=(None, self.NUM_CLASSES), name="label")
-        # z_ = tf.placeholder(tf.float32, shape=(None, self.LATENT_DIM), name="latent_space")
-
         self.image_inp = Input(shape=self.IMG_SHAPE, name="image")
         self.label_inp = Input(shape=(self.NUM_CLASSES,), name="label")
         self.latent_space_inp = Input(shape=(self.LATENT_DIM,), name="latent_space")
 
         # Создаем дискриминатор
         self.build_discriminator()
-        self.discriminator.compile(
-            loss=["binary_crossentropy"],
-            optimizer=Adam(1e-3),
-            metrics=["accuracy"],
-        )
         self.discriminator.summary()
-
         # Создаем генератор
         self.build_generator()
         self.generator.summary()
@@ -71,57 +58,11 @@ class CGAN():
         Ошибки
         """
         self.optimizer_gen = Adam(5e-4)  # У Генератора больше
-        self.optimizer_dis = Adam(1e-4)  # У Дискриминатора меньше (чтоб не душил Генератор)
-
-        # # Переменные генератора и дискриминаторы (отдельно) для оптимизаторов
-        # self.generator_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "generator")
-        # self.discriminator_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "discriminator")
+        self.optimizer_dis = Adam(1e-5)  # У Дискриминатора меньше (чтоб не душил Генератор)
 
         # Получаем переменные генератора и дискриминатора
         self.generator_vars = self.generator.trainable_variables
         self.discriminator_vars = self.discriminator.trainable_variables
-
-        # Инициализируем
-        # sess.run(tf.global_variables_initializer())
-
-    def step_learn_gen(self, image, label, latent):
-        """Шаг обучения Генератора"""
-        with tf.GradientTape() as gen_tape:
-            # Передаем данные через генератор
-            generated_images = self.generator([latent, label], training=True)
-            # Передаем сгенерированные изображения через дискриминатор
-            dis_output = self.discriminator([generated_images, label], training=False)
-            # Вычисляем потери генератора
-            l_gen = -tf.reduce_mean(tf.math.log(1. - dis_output + 1e-9))
-
-        # Получаем градиенты для генератора
-        grads_gen = gen_tape.gradient(l_gen, self.generator.trainable_variables)
-
-        # Применяем градиенты
-        self.optimizer_gen.apply_gradients(zip(grads_gen, self.generator.trainable_variables))
-
-        return l_gen  # Возвращаем значение потерь
-
-    def step_learn_dis(self, image, label, latent):
-        """Шаг обучения Дискриминатора"""
-        with tf.GradientTape() as dis_tape:
-            # Передаем реальные изображения через дискриминатор
-            dis_real_output = self.discriminator([image, label], training=True)
-            # Генерируем изображения
-            generated_images = self.generator([latent, label], training=False)
-            # Передаем сгенерированные изображения через дискриминатор
-            dis_fake_output = self.discriminator([generated_images, label], training=True)
-            # Вычисляем потери дискриминатора
-            l_dis = 0.5 * (tf.reduce_mean(-tf.math.log(dis_real_output + 1e-9)) +
-                           tf.reduce_mean(-tf.math.log(1. - dis_fake_output + 1e-9)))
-
-        # Получаем градиенты для дискриминатора
-        grads_dis = dis_tape.gradient(l_dis, self.discriminator.trainable_variables)
-
-        # Применяем градиенты
-        self.optimizer_dis.apply_gradients(zip(grads_dis, self.discriminator.trainable_variables))
-
-        return l_dis  # Возвращаем значение потерь
 
     def build_generator(self) -> Model:
         # Мучаемся со входом
@@ -129,16 +70,15 @@ class CGAN():
             latent_space_and_label = concatenate([self.latent_space_inp, self.label_inp])
 
             # Сам Генератор
-            x = Dense(7**2*64, activation=LeakyReLU())(latent_space_and_label)
-            x = Reshape((7, 7, 64))(x)
+            x = Dense(7**2, activation=LeakyReLU(0.1))(latent_space_and_label)
+            x = Reshape((7, 7, 1))(x)
 
-            for i in [64, 16]:
-                x = Dropout(0.1)(x)
-                x = Conv2D(i, (3, 3), activation=LeakyReLU(), padding="same")(x)
-                x = Conv2D(i, (3, 3), activation=LeakyReLU(), padding="same")(x)
-                x = UpSampling2D()(x)
+            for i in range(3, 5):
+                x = Dropout(0.2)(x)
+                x = Conv2DTranspose(2**i, (3, 3), activation=LeakyReLU(0.1), padding="same")(x)
+                x = Conv2DTranspose(2**i, (7, 7), activation=LeakyReLU(0.1), padding="same", strides=2)(x)
 
-            x = Conv2D(1, (7, 7), activation="sigmoid", padding="same")(x)
+            x = Conv2D(1, (5, 5), activation="sigmoid", padding="same")(x)
             x = Reshape(self.IMG_SHAPE)(x)
 
             self.generator = Model([self.latent_space_inp, self.label_inp], x, name="generator")
@@ -151,13 +91,13 @@ class CGAN():
             units_repeat = Reshape([*self.IMG_SHAPE[:-1], self.NUM_CLASSES])(units_repeat)
 
             img_and_label = concatenate([units_repeat, self.image_inp])
+            x = img_and_label
 
             # Сам Дискриминатор
-            x = img_and_label
-            for i in range(2, 5):
-                x = Dropout(0.1)(x)
-                x = Conv2D(2**i, (3, 3), activation=LeakyReLU(), padding="same")(x)
-                x = MaxPooling2D()(x)
+            for i in range(5, 2, -1):
+                x = Dropout(0.2)(x)
+                x = Conv2D(2**i, (7, 7), activation=LeakyReLU(0.1), padding="same")(x)
+                x = Conv2D(2**i, (3, 3), activation=LeakyReLU(0.1), padding="same", strides=2)(x)
 
             x = Flatten()(x)
             x = Dense(1, activation="sigmoid")(x)
@@ -197,7 +137,6 @@ class CGAN():
 
     def train(self, epochs, batch_size=128, sample_interval=100):
         # Просто единицы и нули для Дискриминатора
-        global loss_dis, loss_gen
         valid = np.ones((batch_size, 1))
         fake = np.zeros((batch_size, 1))
 
@@ -207,33 +146,48 @@ class CGAN():
             # -------------------------
             #  Обучение дискриминатора
             # -------------------------
-            for _ in range(self.NUM_STEP_LEARN):
-                imgs, labels, noise = next(get_batch)
-                loss_dis = self.step_learn_dis(imgs, labels, noise)
+            images, labels, noise = next(get_batch)
+            with tf.GradientTape() as dis_tape:
+                dis_real_output = self.discriminator([images, labels], training=True)
+                generated_images = self.generator([noise, labels], training=False)
+                dis_fake_output = self.discriminator([generated_images, labels], training=True)
 
-                # Если Дискриминатор обыгрывает Генератор, то обучение остановится
-                if loss_dis < 1.0:
-                    break
+                # Чем настоящие картинки нереальнее и сгенерированные реальные, тем ошибка больше
+                l_dis = 0.5 * (tf.reduce_mean(-tf.math.log(dis_real_output + 1e-8)) +
+                               tf.reduce_mean(-tf.math.log(1. - dis_fake_output + 1e-8)))
+
+            # Получаем градиенты для дискриминатора
+            grads_dis = dis_tape.gradient(l_dis, self.discriminator.trainable_variables)
+
+            # Применяем градиенты
+            self.optimizer_dis.apply_gradients(zip(grads_dis, self.discriminator.trainable_variables))
 
             # ---------------------
             #  Обучение генератора
             # ---------------------
-            for _ in range(self.NUM_STEP_LEARN):
-                imgs, labels, noise = next(get_batch)
-                loss_gen = self.step_learn_gen(imgs, labels, noise)
+            images, labels, noise = next(get_batch)
+            with tf.GradientTape() as gen_tape:
+                generated_images = self.generator([noise, labels], training=True)
+                dis_output = self.discriminator([generated_images, labels], training=False)
 
-                # Если Генератор сильно обыгрывает, то обучение остановится
-                if loss_gen > 0.5:
-                    break
+                # Чем более реалистичная картина (для дискриминатора), тем меньше ошибка
+                l_gen = -tf.reduce_mean(tf.math.log(dis_output + 1e-8))
 
+            # Получаем градиенты для генератора
+            grads_gen = gen_tape.gradient(l_gen, self.generator.trainable_variables)
+
+            # Применяем градиенты
+            self.optimizer_gen.apply_gradients(zip(grads_gen, self.generator.trainable_variables))
+
+            # ______________________________
             # Сохраняем генерируемые образцы
             if iter_learn % sample_interval == 0:
                 self.sample_images(iter_learn)
 
                 # Вывод прогресса
                 print(f"{iter_learn:03} \t"
-                      f"[Dis loss: {loss_dis:.3f}] \t"
-                      f"[Gen loss: {loss_gen:.3f}]")
+                      f"[Dis loss: {l_dis:.3f}] \t"
+                      f"[Gen loss: {l_gen:.3f}]")
 
     def sample_images(self, epoch):
         r, c = 2, 5
@@ -242,9 +196,6 @@ class CGAN():
         sampled_labels = keras.utils.to_categorical(label, self.NUM_CLASSES)
 
         gen_imgs = self.generator.predict([noise, sampled_labels], verbose=False)
-
-        # Переводим в промежуток [0; 1]
-        gen_imgs = 0.5 * gen_imgs + 0.5
 
         # Делаем картинку
         fig, axs = plt.subplots(r, c, figsize=(13, 6))  # Увеличиваем размер фигуры
@@ -266,4 +217,4 @@ if __name__ == "__main__":
         os.remove(f"./images/{i}")
 
     cgan = CGAN()
-    cgan.train(epochs=20000, batch_size=512, sample_interval=100)
+    cgan.train(epochs=20000, batch_size=1024, sample_interval=100)
