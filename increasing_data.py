@@ -14,15 +14,15 @@ data_augment = ImageDataGenerator(
         fill_mode="reflect"
 )
 
-path = "flowers"
-save_to_dir = "new_flowers"
+path = "flowers_dataset"
+save_to_dir = "big_flowers_dataset"
 increase_coeff = 20  # Во сколько раз увеличиваем датасет
 
 
 os.mkdir(save_to_dir)
 
 count_prepearing_images = 1
-count_all_images = sum([len(os.listdir("flowers/" + type_flower)) for type_flower in os.listdir("flowers")])
+count_all_images = sum([len(os.listdir("flowers_dataset/" + type_flower)) for type_flower in os.listdir("flowers_dataset")])
 for directory_name in os.listdir(path):
     os.mkdir(save_to_dir + "\\" + directory_name)  # Сохраняем ярлыки (lable)
 

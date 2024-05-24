@@ -1,10 +1,8 @@
-from __future__ import print_function, division
-
 import keras.utils
 from keras.datasets import mnist
 from keras.layers import *
-from keras.models import Sequential, Model
-from keras.optimizers import Adam, SGD
+from keras.models import Model
+from keras.optimizers import Adam
 from keras import backend as K
 
 import matplotlib.pyplot as plt
@@ -46,66 +44,54 @@ class CGAN():
         """
         # z == latten_space
         self.generated_z = self.generator([self.latent_space_inp, self.label_inp])
-
-        self.dis_img = self.discriminator([self.image_inp, self.label_inp])
         self.dis_gen_z = self.discriminator([self.generated_z, self.label_inp])
 
         self.cgan_model = Model([self.latent_space_inp, self.label_inp], self.dis_gen_z, name="CGAN")
         self.cgan = self.cgan_model([self.latent_space_inp, self.label_inp])
 
-        """
-        Ошибки
-        """
         self.optimizer_gen = Adam(5e-4)  # У Генератора больше
         self.optimizer_dis = Adam(1e-5)  # У Дискриминатора меньше (чтоб не душил Генератор)
 
-        # Получаем переменные генератора и дискриминатора
-        self.generator_vars = self.generator.trainable_variables
-        self.discriminator_vars = self.discriminator.trainable_variables
-
     def build_generator(self) -> Model:
         # Мучаемся со входом
-        with tf.variable_scope("generator"):
-            latent_space_and_label = concatenate([self.latent_space_inp, self.label_inp])
+        latent_space_and_label = concatenate([self.latent_space_inp, self.label_inp])
 
-            # Сам Генератор
-            x = Dense(5**2, activation=LeakyReLU(0.1))(latent_space_and_label)
-            x = Reshape((5, 5, 1))(x)
-            x = Conv2DTranspose(64, (3, 3), activation=LeakyReLU(0.1))(x)
+        # Сам Генератор
+        x = Dense(5**2, activation=LeakyReLU(0.1))(latent_space_and_label)
+        x = Reshape((5, 5, 1))(x)
+        x = Conv2DTranspose(64, (3, 3), activation=LeakyReLU(0.1))(x)
 
-            for i in range(5, 7):
-                x = Conv2DTranspose(2**i, (3, 3), activation=LeakyReLU(0.1), padding="same")(x)
-                x = UpSampling2D()(x)
-                x = Conv2DTranspose(2**i, (3, 3), activation=LeakyReLU(0.1), padding="same")(x)
+        for i in range(5, 7):
+            x = Conv2DTranspose(2**i, (3, 3), activation=LeakyReLU(0.1), padding="same")(x)
+            x = UpSampling2D()(x)
+            x = Conv2DTranspose(2**i, (3, 3), activation=LeakyReLU(0.1), padding="same")(x)
 
-            x = Conv2D(1, (3, 3), activation="sigmoid", padding="same")(x)
-            x = Reshape(self.IMG_SHAPE)(x)
+        x = Conv2D(1, (3, 3), activation="sigmoid", padding="same")(x)
+        x = Reshape(self.IMG_SHAPE)(x)
 
-            self.generator = Model([self.latent_space_inp, self.label_inp], x, name="generator")
+        self.generator = Model([self.latent_space_inp, self.label_inp], x, name="generator")
 
     def build_discriminator(self) -> Model:
-        with tf.variable_scope("discriminator"):
-            # Объединяем картинку с лейблами
-            repeat_n = int(np.prod(self.IMG_SHAPE))
-            units_repeat = RepeatVector(repeat_n)(self.label_inp)
-            units_repeat = Reshape([*self.IMG_SHAPE[:-1], self.NUM_CLASSES])(units_repeat)
+        # Объединяем картинку с лейблами
+        repeat_n = int(np.prod(self.IMG_SHAPE))
+        units_repeat = RepeatVector(repeat_n)(self.label_inp)
+        units_repeat = Reshape([*self.IMG_SHAPE[:-1], self.NUM_CLASSES])(units_repeat)
 
-            img_and_label = concatenate([units_repeat, self.image_inp])
-            x = img_and_label
+        img_and_label = concatenate([units_repeat, self.image_inp])
+        x = img_and_label
 
-            # Сам Дискриминатор
-            for i in range(8, 5, -1):
-                x = Conv2D(2**i, (3, 3), activation=LeakyReLU(0.1), padding="same")(x)
-                x = MaxPooling2D()(x)
-                x = Conv2D(2**i, (3, 3), activation=LeakyReLU(0.1), padding="same")(x)
+        # Сам Дискриминатор
+        for i in range(8, 5, -1):
+            x = Conv2D(2**i, (3, 3), activation=LeakyReLU(0.1), padding="same")(x)
+            x = MaxPooling2D()(x)
+            x = Conv2D(2**i, (3, 3), activation=LeakyReLU(0.1), padding="same")(x)
 
-            x = Flatten()(x)
-            x = Dense(1, activation="sigmoid")(x)
+        x = Flatten()(x)
+        x = Dense(1, activation="sigmoid")(x)
 
-            self.discriminator = Model([self.image_inp, self.label_inp], x, name="discriminator")
+        self.discriminator = Model([self.image_inp, self.label_inp], x, name="discriminator")
 
     def get_batch(self, batch_size):
-        """Декоратор для генератора батчей"""
         # Загружаем набор данных
         (x, y), (x_, y_) = mnist.load_data()
 
@@ -192,7 +178,7 @@ class CGAN():
     def sample_images(self, epoch):
         r, c = 2, 5
         noise = np.random.normal(0, 1, (r * c, self.LATENT_DIM))
-        label = np.arange(0, 10).reshape(-1, 1)
+        label = np.arange(0, self.NUM_CLASSES).reshape(-1, 1)
         sampled_labels = keras.utils.to_categorical(label, self.NUM_CLASSES)
 
         gen_imgs = self.generator.predict([noise, sampled_labels], verbose=False)
