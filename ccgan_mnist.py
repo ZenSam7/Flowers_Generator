@@ -32,10 +32,10 @@ class CGAN():
         self.label_inp = Input(shape=(self.NUM_CLASSES,), name="label")
         self.latent_space_inp = Input(shape=(self.LATENT_DIM,), name="latent_space")
 
-        # Создаем дискриминатор
+        # Создаём дискриминатор
         self.build_discriminator()
         self.discriminator.summary()
-        # Создаем генератор
+        # Создаём генератор
         self.build_generator()
         self.generator.summary()
 
