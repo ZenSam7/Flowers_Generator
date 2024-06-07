@@ -2,4 +2,5 @@
 big_flowers_dataset
  __pycache__/
 .git/
-.gitignore
+.idea
+generated_flowers
