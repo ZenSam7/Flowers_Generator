@@ -6,18 +6,55 @@ from keras.models import Model, Sequential
 from keras.optimizers import Adam, RMSprop
 import keras.backend as K
 
-from math import log2
 import numpy as np
-from random import randint
-
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
+from matplotlib.animation import FuncAnimation, PillowWriter
+
+from PIL import Image
 import os
 
-import warnings
+def make_gif():
+    """Создаём гифку"""
+    print("Делаем гифку...", end="\t")
 
-# Удаляем все прошлые изображения
-for i in os.listdir("./generated_flowers"):
-    os.remove(f"./generated_flowers/{i}")
+    # Считываем все файлы изображений и сортируем их по имени
+    images = sorted(
+        [os.path.join("generated_flowers", img) for img in os.listdir("generated_flowers")],
+        key=lambda path: int(path.split("/")[-1].split(".")[0])
+    )
+
+    # Загружаем первое изображение для инициализации графика
+    first_image = Image.open(images[0])
+
+    # Инициализация фигуры без осей
+    fig, ax = plt.subplots()
+    ax.axis("off")
+
+    # Настройка параметров подграфика
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0, wspace=0, hspace=0)
+    # Устанавливаем размер фигуры точно соответствующий размеру изображения
+    fig.set_size_inches(first_image.width / 100.0, first_image.height / 100.0)
+    im = ax.imshow(first_image)
+
+    # Функция для обновления изображения на каждом кадре
+    def update(frame):
+        image = Image.open(images[frame])
+        im.set_data(image)
+        return [im]
+
+    # Создание анимации
+    ani = FuncAnimation(fig, update, frames=len(images), blit=True)
+
+    # Сохранение анимации в GIF файл
+    ani.save("animation.gif", writer=PillowWriter(fps=5), dpi=200)
+    print("Done")
+
+
+def delete_images():
+    # Удаляем все прошлые изображения
+    for i in os.listdir("./generated_flowers"):
+        os.remove(f"./generated_flowers/{i}")
 
 
 class CCGAN(keras.Model):
@@ -31,16 +68,16 @@ class CCGAN(keras.Model):
         self.HANDICAP = 5  # Фора чтобы одна иишка не отставала от другой (только при self.LEARNING_TYPE = False)
 
         # Константы
-        self.FILTERS_DIS = 64  # Нижняя граница
+        self.FILTERS_DIS = 32  # Нижняя граница
         self.FILTERS_GEN = 16
         self.DROPOUT = 0.2
         self.HIDDEN_IMG_SHAPE = (60, 60, 1)
         self.LEARNING_TYPE = True  # True == используя стандартный keras, False == кастомный метод обучения
 
         self.DISCRIMINATOR_LAYERS = 4
-        self.DIS_CONS_LAYERS = 1
+        self.DIS_CONS_LAYERS = 3
 
-        self.GEN_DENSE_LAYERS = 9
+        self.GEN_DENSE_LAYERS = 8
         self.GEN_CONV_LAYERS = 2
 
         """
@@ -88,12 +125,9 @@ class CCGAN(keras.Model):
         for i in range(self.DISCRIMINATOR_LAYERS):
             x = BatchNormalization()(Dropout(self.DROPOUT)(x))
             for _ in range(self.DIS_CONS_LAYERS):
-                x = Conv2D(self.FILTERS_DIS * 2**i, (5, 5), activation=LeakyReLU())(x)
+                x = Conv2D(self.FILTERS_DIS * 2**i, (3, 3), activation=LeakyReLU())(x)
 
             x = AveragePooling2D()(x)
-
-        while x.shape[1] >= 3:
-            x = Conv2D(x.shape[-1]*2, (3, 3), activation=LeakyReLU())(x)
 
         x = Flatten()(x)
 
@@ -168,6 +202,8 @@ class CCGAN(keras.Model):
 
         # Делаем картинку
         fig, axs = plt.subplots(row, column, figsize=(12, 6))
+        fig.subplots_adjust(left=0, right=1, top=1, bottom=0, wspace=0, hspace=0)
+
         count = 0
         for i in range(row):
             for j in range(column):
@@ -175,7 +211,8 @@ class CCGAN(keras.Model):
                 axs[i, j].set_title(label[count][0])
                 axs[i, j].axis("off")
                 count += 1
-        fig.savefig("generated_flowers/%d.png" % epoch, dpi=666)
+
+        fig.savefig("generated_flowers/%d.png" % epoch, dpi=200, bbox_inches="tight", pad_inches=0)
         plt.close()
 
     def train(self, batch_size=32, dataset="flowers_dataset"):
@@ -199,8 +236,8 @@ class CCGAN(keras.Model):
                 self.discriminator.trainable = True
 
                 # Сохраняем генерируемые образцы каждую эпоху
-                if learn_iter % 6 == 0:
-                    self.sample_images(learn_iter // 6)
+                if learn_iter % 5 == 0:
+                    self.sample_images(learn_iter // 5)
 
         else:
             # Просто единицы и нули для Дискриминатора
@@ -267,4 +304,8 @@ print("Generator:    ", f"{ccgan.generator.count_params():,}")
 print("Discriminator:", f"{ccgan.discriminator.count_params():,}")
 print("Sum:          ", f"{ccgan.generator.count_params() + ccgan.discriminator.count_params():,}")
 
-ccgan.train(batch_size=1024, dataset="flowers_dataset")
+
+make_gif()
+delete_images()
+
+ccgan.train(batch_size=512, dataset="flowers_dataset")
