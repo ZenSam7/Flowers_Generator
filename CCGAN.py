@@ -65,21 +65,21 @@ class CCGAN(keras.Model):
         self.NUM_CLASSES = 5  # Не менять!
 
         # Входные форматы
-        self.IMG_SHAPE = (160, 160, 1)
-        self.LATENT_DIM = 1
-        self.HANDICAP = 5  # Фора чтобы одна иишка не отставала от другой (только при self.LEARNING_TYPE == 0)
+        self.IMG_SHAPE = (180, 180, 1)
+        self.LATENT_DIM = 0
+        self.HANDICAP = 10  # Фора чтобы одна иишка не отставала от другой (только при self.LEARNING_TYPE == 0)
 
         # Константы
-        self.FILTERS_DIS = 32  # Нижняя граница
-        self.FILTERS_GEN = 64
-        self.DROPOUT = 0.3
-        self.HIDDEN_IMG_SHAPE = (77, 77, 1)
+        self.FILTERS_DIS = 16  # Нижняя граница
+        self.FILTERS_GEN = 32
+        self.DROPOUT = 0.0
+        self.HIDDEN_IMG_SHAPE = (180, 180, 1)
         self.LEARNING_TYPE = 1  # 1 == используя стандартный keras, 0 == кастомный метод обучения
 
-        self.DISCRIMINATOR_LAYERS = 3
-        self.DIS_CONS_LAYERS = 5
+        self.DISCRIMINATOR_LAYERS = 0
+        self.DIS_CONS_LAYERS = 2
 
-        self.GEN_DENSE_LAYERS = -1
+        self.GEN_DENSE_LAYERS = 5
         self.GEN_CONV_LAYERS = 3
 
         """
@@ -121,13 +121,13 @@ class CCGAN(keras.Model):
         # Объединяем картинку с лейблами
         x = BatchNormalization()(self.image_inp)
 
-        for i in range(self.DISCRIMINATOR_LAYERS):
-            x = MaxPooling2D()(x)
-            x = BatchNormalization()(x)
-            for _ in range(self.DIS_CONS_LAYERS):
-                x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), activation="tanh")(x)
-
         x = Flatten()(x)
+
+        x = Dense(1024, activation="tanh")(x)
+        while x.shape[-1] > 10:
+            x = BatchNormalization()(Dropout(self.DROPOUT)(x))
+            x = concatenate([x, self.label_inp])
+            x = Dense(x.shape[-1]//1.5, activation="tanh")(x)
 
         # Добавляем метки класса
         x = concatenate([self.label_inp, x])
@@ -139,17 +139,18 @@ class CCGAN(keras.Model):
         # Разжимаем вектор шума в маленькую картинку
         x = self.latent_space_inp
 
+        for _ in range(self.GEN_DENSE_LAYERS):
+            x = BatchNormalization()(Dropout(self.DROPOUT)(x))
+            x = concatenate([x, self.label_inp])
+            x = Dense(x.shape[-1]*2, activation="tanh")(x)
+
         x = concatenate([x, self.label_inp])
         x = Dense(np.prod(self.HIDDEN_IMG_SHAPE), activation="tanh")(x)
         x = Reshape(self.HIDDEN_IMG_SHAPE)(x)
 
-        for _ in range(self.GEN_CONV_LAYERS):
-            x = BatchNormalization()(Dropout(self.DROPOUT)(x))
-            x = Conv2DTranspose(self.FILTERS_GEN, (3, 3), activation="tanh")(x)
-        x = UpSampling2D()(x)
-        for _ in range(self.GEN_CONV_LAYERS):
-            x = BatchNormalization()(Dropout(self.DROPOUT)(x))
-            x = Conv2D(self.FILTERS_GEN, (3, 3), activation="tanh")(x)
+        # x = BatchNormalization()(Dropout(self.DROPOUT)(x))
+        # for _ in range(self.GEN_CONV_LAYERS):
+        #     x = Conv2D(self.FILTERS_GEN, (3, 3), activation="tanh")(x)
 
         generated_img = Dense(1, activation="tanh")(x)
 
@@ -201,27 +202,27 @@ class CCGAN(keras.Model):
                 axs[i, j].axis("off")
                 count += 1
 
-        fig.savefig(f"{flowers_path}/%d.png" % epoch, dpi=200, bbox_inches="tight", pad_inches=0)
+        fig.savefig(f"{flowers_path}/%d.png" % epoch, dpi=400, bbox_inches="tight", pad_inches=0)
         plt.close()
 
     def train(self, batch_size=32, dataset="flowers_dataset"):
         if self.LEARNING_TYPE:
-            valid = np.ones(shape=(2799, 1))
-            fake = np.zeros(shape=(2799, 1))
+            valid = np.ones(shape=(batch_size, 1))
+            fake = np.zeros(shape=(batch_size, 1))
 
-            get_batch = self.batch_gen(2799, dataset)
+            get_batch = self.batch_gen(batch_size, dataset)
 
             for learn_iter in range(10 ** 10):
                 # Загружаем случайные картинки и лейблы
                 images, labels, noise = next(iter(get_batch))
 
-                generated_images = self.generator.predict([noise, labels], batch_size=batch_size)
-                self.discriminator.fit([generated_images, labels], fake, verbose=1, batch_size=batch_size)
-                self.discriminator.fit([images, labels], valid, verbose=1, batch_size=batch_size)
+                generated_images = self.generator.predict([noise, labels])
+                self.discriminator.fit([generated_images, labels], fake, verbose=1)
+                self.discriminator.fit([images, labels], valid, verbose=1)
 
                 # Обучаем генератор
                 self.discriminator.trainable = False
-                self.ccgan.fit([noise, labels], valid, verbose=1, batch_size=batch_size)
+                self.ccgan.fit([noise, labels], valid, verbose=1)
                 self.discriminator.trainable = True
 
                 # Сохраняем генерируемые образцы каждую эпоху
@@ -299,4 +300,4 @@ print("Sum:          ", f"{ccgan.generator.count_params() + ccgan.discriminator.
 #     print("Нет изображений")
 delete_images()
 
-ccgan.train(batch_size=1, dataset="flowers_dataset")
+ccgan.train(batch_size=1234, dataset="big_flowers_dataset")

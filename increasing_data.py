@@ -16,7 +16,7 @@ data_augment = ImageDataGenerator(
 
 path = "flowers_dataset"
 save_to_dir = "big_flowers_dataset"
-increase_coeff = 20  # Во сколько раз увеличиваем датасет
+increase_coeff = 30  # Во сколько раз увеличиваем датасет
 
 
 os.mkdir(save_to_dir)
@@ -24,12 +24,12 @@ os.mkdir(save_to_dir)
 count_prepearing_images = 1
 count_all_images = sum([len(os.listdir("flowers_dataset/" + type_flower)) for type_flower in os.listdir("flowers_dataset")])
 for directory_name in os.listdir(path):
-    os.mkdir(save_to_dir + "\\" + directory_name)  # Сохраняем ярлыки (lable)
+    os.mkdir(save_to_dir + "/" + directory_name)  # Сохраняем ярлыки (lable)
 
-    for image_name in os.listdir(f"{path}\\{directory_name}"):
+    for image_name in os.listdir(f"{path}/{directory_name}"):
         # Загружаем изображение
         try:
-            single_img = load_img(f"{path}\\{directory_name}\\{image_name}")
+            single_img = load_img(f"{path}/{directory_name}/{image_name}")
         except:
             continue
         image_array = img_to_array(single_img)
@@ -39,7 +39,7 @@ for directory_name in os.listdir(path):
         i = 0
         for batch in data_augment.flow(
                 image_array,
-                save_to_dir=save_to_dir + "\\" + directory_name,
+                save_to_dir=save_to_dir + "/" + directory_name,
                 save_prefix=directory_name,
                 save_format="jpg"):
             i += 1
