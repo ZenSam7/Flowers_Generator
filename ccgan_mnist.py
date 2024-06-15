@@ -12,10 +12,6 @@ import os
 
 import tensorflow as tf
 
-tf = tf.compat.v1
-sess = tf.Session()
-K.set_session(sess)
-
 
 class CGAN():
     def __init__(self):
@@ -50,7 +46,7 @@ class CGAN():
         self.cgan = self.cgan_model([self.latent_space_inp, self.label_inp])
 
         self.optimizer_gen = Adam(5e-4)  # У Генератора больше
-        self.optimizer_dis = Adam(1e-5)  # У Дискриминатора меньше (чтоб не душил Генератор)
+        self.optimizer_dis = Adam(5e-6)  # У Дискриминатора меньше (чтоб не душил Генератор)
 
     def build_generator(self) -> Model:
         # Мучаемся со входом
@@ -61,10 +57,12 @@ class CGAN():
         x = Reshape((5, 5, 1))(x)
         x = Conv2DTranspose(64, (3, 3), activation=LeakyReLU(0.1))(x)
 
-        for i in range(5, 7):
-            x = Conv2DTranspose(2**i, (3, 3), activation=LeakyReLU(0.1), padding="same")(x)
+        for i in range(6, 8):
             x = UpSampling2D()(x)
+            # x_temp = Dense(2**i)(x)
             x = Conv2DTranspose(2**i, (3, 3), activation=LeakyReLU(0.1), padding="same")(x)
+            x = Conv2DTranspose(2**i, (3, 3), activation=LeakyReLU(0.1), padding="same")(x)
+            # x = add([x, x_temp])
 
         x = Conv2D(1, (3, 3), activation="sigmoid", padding="same")(x)
         x = Reshape(self.IMG_SHAPE)(x)
@@ -73,18 +71,18 @@ class CGAN():
 
     def build_discriminator(self) -> Model:
         # Объединяем картинку с лейблами
-        repeat_n = int(np.prod(self.IMG_SHAPE))
-        units_repeat = RepeatVector(repeat_n)(self.label_inp)
+        units_repeat = RepeatVector(int(np.prod(self.IMG_SHAPE)))(self.label_inp)
         units_repeat = Reshape([*self.IMG_SHAPE[:-1], self.NUM_CLASSES])(units_repeat)
 
-        img_and_label = concatenate([units_repeat, self.image_inp])
-        x = img_and_label
+        x = concatenate([units_repeat, self.image_inp])
 
         # Сам Дискриминатор
-        for i in range(8, 5, -1):
-            x = Conv2D(2**i, (3, 3), activation=LeakyReLU(0.1), padding="same")(x)
+        for i in range(7, 4, -1):
             x = MaxPooling2D()(x)
+            # x_temp = Dense(2**i)(x)
+            x = Conv2D(2**i, (5, 3), activation=LeakyReLU(0.1), padding="same")(x)
             x = Conv2D(2**i, (3, 3), activation=LeakyReLU(0.1), padding="same")(x)
+            # x = add([x, x_temp])
 
         x = Flatten()(x)
         x = Dense(1, activation="sigmoid")(x)
@@ -108,7 +106,6 @@ class CGAN():
 
         n_batches = x.shape[0] // batch_size
 
-        # Замыкание
         while True:
             # Перед игрой тасуем колоду
             idxs = np.random.permutation(y.shape[0])
@@ -199,8 +196,11 @@ class CGAN():
 
 if __name__ == "__main__":
     # Удаляем все прошлые изображения
-    for i in os.listdir("./mnist_images"):
-        os.remove(f"./mnist_images/{i}")
+    try:
+        for i in os.listdir("./mnist_images"):
+            os.remove(f"./mnist_images/{i}")
+    except FileNotFoundError:
+        os.mkdir("./mnist_images")
 
     cgan = CGAN()
-    cgan.train(epochs=20000, batch_size=333, sample_interval=200)
+    cgan.train(epochs=90000, batch_size=200, sample_interval=200)
