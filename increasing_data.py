@@ -4,11 +4,11 @@ import os
 import glob
 
 data_augment = ImageDataGenerator(
-        rotation_range=20,
-        width_shift_range=0.1,
-        height_shift_range=0.1,
-        zoom_range=0.1,
-        brightness_range=(0.9, 1),
+        rotation_range=25,
+        width_shift_range=0.15,
+        height_shift_range=0.15,
+        zoom_range=0.15,
+        brightness_range=(0.9, 1.1),
         horizontal_flip=True,
         vertical_flip=False,
         fill_mode="reflect"
