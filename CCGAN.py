@@ -60,25 +60,24 @@ def delete_images():
         os.remove(f"{flowers_path}/{i}")
 
 
-class CCGAN(keras.Model):
+class CCGAN():
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.NUM_CLASSES = 5  # Не менять!
 
         # Входные форматы
-        self.IMG_SHAPE = (128, 128, 3)
-        self.LATENT_DIM = 8
-        self.HANDICAP = 5  # Фора чтобы одна иишка не отставала от другой (только при self.LEARNING_TYPE == 0)
+        self.IMG_SHAPE = (172, 172, 3)
+        self.LATENT_DIM = 16
+        self.HANDICAP = 5  # Фора чтобы одна иишка не отставала от другой
 
         # Константы
-        self.FILTERS_DIS = 3   # Нижняя граница
-        self.FILTERS_GEN = 3   # Нижняя граница
-        self.HIDDEN_IMG_SHAPE = (4, 4, 1)
-        # "keras" == используя стандартный keras, "колхоз" == кастомный метод обучения
-        self.LEARNING_TYPE = "колхоз"
+        self.FILTERS_DIS = 8   # Нижняя граница
+        # self.FILTERS_GEN = 24   # Нижняя граница
+        self.HIDDEN_IMG_SHAPE = (172, 172, 3)
+        self.DROPOUT = 0.2
 
         self.DIS_LAYERS = 6
-        self.GEN_LAYERS = 5
+        self.GEN_LAYERS = 4
 
         """
         Генератор и Дискриминатор
@@ -104,34 +103,28 @@ class CCGAN(keras.Model):
 
         self.ccgan = Model([self.latent_space_inp, self.label_inp], self.dis_gen_z, name="CCGAN")
 
-        if self.LEARNING_TYPE == "keras":
-            self.discriminator.trainable = True
-            self.discriminator.compile(Adam(1e-4), loss="binary_crossentropy")
-
-            self.discriminator.trainable = False
-            self.ccgan.compile(Adam(1e-4), loss="binary_crossentropy")
-
-        else:
-            self.optimizer_gen = Adam(1e-3)
-            self.optimizer_dis = Adam(1e-3)
+        self.optimizer_gen = Adam(1e-3)
+        self.optimizer_dis = Adam(1e-4)
 
     def build_discriminator(self) -> Model:
-        # Объединяем картинку с лейблами
-        units_repeat = RepeatVector(int(np.prod(self.IMG_SHAPE)))(self.label_inp)
-        units_repeat = Reshape([*self.IMG_SHAPE[:-1], self.IMG_SHAPE[-1]*self.NUM_CLASSES])(units_repeat)
+        # # Объединяем картинку с лейблами
+        # units_repeat = RepeatVector(int(np.prod(self.IMG_SHAPE)))(self.label_inp)
+        # units_repeat = Reshape([*self.IMG_SHAPE[:-1], self.IMG_SHAPE[-1]*self.NUM_CLASSES])(units_repeat)
+        #
+        # x = concatenate([units_repeat, self.image_inp])
 
-        norm_image = BatchNormalization()(self.image_inp)
-        x = concatenate([units_repeat, norm_image])
+        # Объединяем картинку с лейблами
+        x = Embedding(self.NUM_CLASSES, self.IMG_SHAPE[0]**2)(self.label_inp)
+        x = Reshape([*self.IMG_SHAPE[:2], self.NUM_CLASSES])(x)
+        x = concatenate([self.image_inp, x])
 
         for i in range(self.DIS_LAYERS):
             x = Conv2D(self.FILTERS_DIS * 2**i, (3, 3), padding="same", activation=LeakyReLU())(x)
             x = Conv2D(self.FILTERS_DIS * 2**i, (3, 3), padding="same", activation=LeakyReLU())(x)
-            x = Conv2D(self.FILTERS_DIS * 2**i, (3, 3), padding="same", activation=LeakyReLU())(x)
             x = AveragePooling2D()(x)
-            x = BatchNormalization()(x)
 
         # Сокращаем всё до вектора
-        x = GlobalAveragePooling2D()(x)
+        x = Conv2D(x.shape[-1]*2, x.shape[1:3], activation=LeakyReLU())(x)
 
         # Добавляем метки класса
         x = Flatten()(x)
@@ -141,18 +134,24 @@ class CCGAN(keras.Model):
         self.discriminator = Model([self.image_inp, self.label_inp], x, name="discriminator")
 
     def build_generator(self) -> Model:
-        # Разжимаем вектор шума в маленькую картинку
         x = concatenate([self.latent_space_inp, self.label_inp])
-        x = Dense(np.prod(self.HIDDEN_IMG_SHAPE))(x)
+        # Разжимаем вектор шума в маленькую картинку
+        for i in range(self.GEN_LAYERS):
+            x = concatenate([x, self.label_inp])
+            x = Dense(x.shape[-1]*1.4**i, activation=LeakyReLU())(x)
+            x = Dropout(self.DROPOUT)(BatchNormalization()(x))
+
+        x = concatenate([x, self.label_inp])
+        x = Dense(np.prod(self.HIDDEN_IMG_SHAPE), activation=LeakyReLU())(x)
         x = Reshape(self.HIDDEN_IMG_SHAPE)(x)
 
-        for i in range(self.GEN_LAYERS - 1, -1, -1):
-            x = Conv2DTranspose(self.FILTERS_GEN * 2**i, (9, 9), padding="same", activation="tanh")(x)
-            x = UpSampling2D()(x)
-            x = BatchNormalization()(x)
+        # for i in range(self.GEN_LAYERS - 1, -1, -1):
+        #     x = UpSampling2D()(x)
+        #     x = Dropout(self.DROPOUT)(BatchNormalization()(x))
+        #     x = Conv2DTranspose(self.FILTERS_GEN * 2**i, (3, 3), padding="same", activation=LeakyReLU())(x)
+        #     x = Conv2DTranspose(self.FILTERS_GEN * 2**i, (3, 3), padding="same", activation=LeakyReLU())(x)
 
-        x = Conv2D(3, (1, 1), activation="tanh", padding="same")(x)
-        generated_img = BatchNormalization()(x)
+        generated_img = Conv2D(3, (3, 3), activation="tanh", padding="same")(x)
 
         self.generator = Model([self.latent_space_inp, self.label_inp], generated_img, name="generator")
 
@@ -230,27 +229,6 @@ class CCGAN(keras.Model):
         self.batch_size = batch_size
         get_batch = self.batch_gen(dataset)
 
-        if self.LEARNING_TYPE == "keras":
-            valid = np.ones(shape=(batch_size, 1))
-            fake = np.zeros(shape=(batch_size, 1))
-
-            for learn_iter in range(10 ** 10):
-                # Сохраняем генерируемые образцы каждую эпоху
-                if learn_iter % 10 == 0:
-                    self.sample_images(learn_iter // 10)
-
-                # Загружаем случайные картинки и лейблы
-                noise = np.random.normal(0, 1, (self.batch_size, self.LATENT_DIM))
-                images, labels = next(iter(get_batch))
-
-                generated_images = self.generator.predict([noise, labels])
-                self.discriminator.fit([generated_images, labels], fake, verbose=1)
-                self.discriminator.fit([images, labels], valid, verbose=1)
-
-                # Обучаем генератор
-                self.ccgan.fit([noise, labels], valid, verbose=1)
-
-        """LEARNING_TYPE == колхоз"""
         # Просто единицы и нули для Дискриминатора
         valid = np.ones((batch_size, 1))
         fake = np.zeros((batch_size, 1))
@@ -262,44 +240,13 @@ class CCGAN(keras.Model):
         all_l_gen = [0]
 
         for learn_iter in range(10 ** 10):
-            # Обучение дискриминатора
-            for _ in range(1 + (self.HANDICAP if np.mean(all_l_dis) - 0.15 > np.mean(all_l_gen) else 0)):
-                images, labels = next(get_batch)
-                noise = np.random.normal(0, 1, [batch_size, self.LATENT_DIM])
-                with tf.GradientTape() as dis_tape:
-                    dis_real_output = self.discriminator([images, labels], training=True)
-                    generated_images = self.generator([noise, labels], training=False)
-                    dis_fake_output = self.discriminator([generated_images, labels], training=True)
-
-                    # Чем настоящие картинки нереальнее или сгенерированные реальные, тем ошибка больше
-                    l_dis = 0.5 * (tf.reduce_mean(-tf.math.log(dis_real_output + 1e-8)) +
-                                   tf.reduce_mean(-tf.math.log(1. - dis_fake_output + 1e-8)))
-
-                all_l_dis.append(l_dis)
-
-                # Получаем градиенты для дискриминатора
-                grads_dis = dis_tape.gradient(l_dis, self.discriminator.trainable_variables)
-                self.optimizer_dis.apply_gradients(zip(grads_dis, self.discriminator.trainable_variables))
-
-            # Обучение генератора
-            for _ in range(1 + (self.HANDICAP if np.mean(all_l_gen) - 0.15 > np.mean(all_l_dis) else 0)):
-                images, labels = next(get_batch)
-                noise = np.random.normal(0, 1, [batch_size, self.LATENT_DIM])
-                with tf.GradientTape() as gen_tape:
-                    generated_images = self.generator([noise, labels], training=True)
-                    dis_output = self.discriminator([generated_images, labels], training=False)
-
-                    # Чем более реалистичная картина (для дискриминатора), тем меньше ошибка
-                    l_gen = -tf.reduce_mean(tf.math.log(dis_output + 1e-8))
-
-                all_l_gen.append(l_gen)
-
-                # Получаем градиенты для генератора
-                grads_gen = gen_tape.gradient(l_gen, self.generator.trainable_variables)
-                self.optimizer_gen.apply_gradients(zip(grads_gen, self.generator.trainable_variables))
+            images, labels = next(get_batch)
+            l_gen, l_dis = self.train_step(images, labels)
+            all_l_gen.append(l_gen)
+            all_l_dis.append(l_dis)
 
             # Сохраняем генерируемые образцы каждую эпоху
-            if learn_iter % 10 == 0:
+            if learn_iter % 25 == 0:
                 self.sample_images(epoch_count)
 
                 # Вывод прогресса и средних ошибок
@@ -323,4 +270,4 @@ print("Sum:          ", f"{ccgan.generator.count_params() + ccgan.discriminator.
 #     print("Нет изображений")
 delete_images()
 
-ccgan.train(batch_size=100, dataset="big_flowers_dataset")
+ccgan.train(batch_size=64, dataset="big_flowers_dataset")
