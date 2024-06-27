@@ -66,18 +66,17 @@ class CCGAN():
         self.NUM_CLASSES = 5  # Не менять!
 
         # Входные форматы
-        self.IMG_SHAPE = (172, 172, 3)
+        self.IMG_SHAPE = (192, 192, 3)
         self.LATENT_DIM = 16
-        self.HANDICAP = 5  # Фора чтобы одна иишка не отставала от другой
 
         # Константы
-        self.FILTERS_DIS = 8   # Нижняя граница
-        # self.FILTERS_GEN = 24   # Нижняя граница
-        self.HIDDEN_IMG_SHAPE = (172, 172, 3)
-        self.DROPOUT = 0.2
+        self.FILTERS_DIS = 6  # Нижняя граница
+        self.FILTERS_GEN = -1  # Нижняя граница
+        # self.HIDDEN_IMG_SHAPE = (12, 12, 1)
+        self.DROPOUT = 0.0
 
-        self.DIS_LAYERS = 6
-        self.GEN_LAYERS = 4
+        self.DIS_LAYERS = 5
+        self.GEN_LAYERS = 1
 
         """
         Генератор и Дискриминатор
@@ -103,56 +102,48 @@ class CCGAN():
 
         self.ccgan = Model([self.latent_space_inp, self.label_inp], self.dis_gen_z, name="CCGAN")
 
-        self.optimizer_gen = Adam(1e-3)
+        self.optimizer_gen = Adam(1e-4)
         self.optimizer_dis = Adam(1e-4)
 
     def build_discriminator(self) -> Model:
-        # # Объединяем картинку с лейблами
-        # units_repeat = RepeatVector(int(np.prod(self.IMG_SHAPE)))(self.label_inp)
-        # units_repeat = Reshape([*self.IMG_SHAPE[:-1], self.IMG_SHAPE[-1]*self.NUM_CLASSES])(units_repeat)
-        #
-        # x = concatenate([units_repeat, self.image_inp])
-
         # Объединяем картинку с лейблами
-        x = Embedding(self.NUM_CLASSES, self.IMG_SHAPE[0]**2)(self.label_inp)
+        x = Embedding(self.NUM_CLASSES, self.IMG_SHAPE[0] ** 2)(self.label_inp)
         x = Reshape([*self.IMG_SHAPE[:2], self.NUM_CLASSES])(x)
         x = concatenate([self.image_inp, x])
 
         for i in range(self.DIS_LAYERS):
-            x = Conv2D(self.FILTERS_DIS * 2**i, (3, 3), padding="same", activation=LeakyReLU())(x)
-            x = Conv2D(self.FILTERS_DIS * 2**i, (3, 3), padding="same", activation=LeakyReLU())(x)
+            x = Dropout(self.DROPOUT)(x)
+            x = Conv2D(self.FILTERS_DIS * 2 ** i, (5, 5), padding="same", activation="tanh")(x)
+            x = Conv2D(self.FILTERS_DIS * 2 ** i, (5, 5), padding="same", activation="tanh")(x)
             x = AveragePooling2D()(x)
 
-        # Сокращаем всё до вектора
-        x = Conv2D(x.shape[-1]*2, x.shape[1:3], activation=LeakyReLU())(x)
+        x = Conv2D(x.shape[-1] * 2, x.shape[1:3], activation="tanh")(x)
+
+        x = Flatten()(x)
+        while x.shape[-1] > 8:
+            x = concatenate([self.label_inp, x])
+            x = Dense(x.shape[-1] // 2, activation="tanh")(x)
 
         # Добавляем метки класса
-        x = Flatten()(x)
         x = concatenate([self.label_inp, x])
-        x = Dense(1, activation="sigmoid")(x)
-
-        self.discriminator = Model([self.image_inp, self.label_inp], x, name="discriminator")
+        predict = Dense(1, activation="sigmoid")(x)
+        self.discriminator = Model([self.image_inp, self.label_inp], predict, name="discriminator")
 
     def build_generator(self) -> Model:
-        x = concatenate([self.latent_space_inp, self.label_inp])
         # Разжимаем вектор шума в маленькую картинку
-        for i in range(self.GEN_LAYERS):
+        x = self.latent_space_inp
+        for _ in range(self.GEN_LAYERS):
+            x = Dropout(self.DROPOUT)(x)
             x = concatenate([x, self.label_inp])
-            x = Dense(x.shape[-1]*1.4**i, activation=LeakyReLU())(x)
-            x = Dropout(self.DROPOUT)(BatchNormalization()(x))
+            x = Dense(x.shape[-1]*2, activation="tanh")(x)
 
+        # TODO: Никаких нахуё свёрток и развёрток!
+        x = Dropout(self.DROPOUT)(x)
         x = concatenate([x, self.label_inp])
-        x = Dense(np.prod(self.HIDDEN_IMG_SHAPE), activation=LeakyReLU())(x)
-        x = Reshape(self.HIDDEN_IMG_SHAPE)(x)
-
-        # for i in range(self.GEN_LAYERS - 1, -1, -1):
-        #     x = UpSampling2D()(x)
-        #     x = Dropout(self.DROPOUT)(BatchNormalization()(x))
-        #     x = Conv2DTranspose(self.FILTERS_GEN * 2**i, (3, 3), padding="same", activation=LeakyReLU())(x)
-        #     x = Conv2DTranspose(self.FILTERS_GEN * 2**i, (3, 3), padding="same", activation=LeakyReLU())(x)
+        x = Dense(np.prod(self.IMG_SHAPE), activation="tanh")(x)
+        x = Reshape(self.IMG_SHAPE)(x)
 
         generated_img = Conv2D(3, (3, 3), activation="tanh", padding="same")(x)
-
         self.generator = Model([self.latent_space_inp, self.label_inp], generated_img, name="generator")
 
     def batch_gen(self, dataset):
@@ -204,14 +195,18 @@ class CCGAN():
     def train_step(self, images, labels):
         noise = tf.random.normal((self.batch_size, self.LATENT_DIM))
 
-        with tf.GradientTape() as dis_tape, tf.GradientTape() as gen_tape:
-            generated_images = self.generator([noise, labels], training=True)
+        with tf.GradientTape() as dis_tape:
+            generated_images = self.generator([noise, labels], training=False)
             dis_real_output = self.discriminator([images, labels], training=True)
             dis_fake_output = self.discriminator([generated_images, labels], training=True)
 
             # Чем настоящие картинки нереальнее или сгенерированные реальнее, тем ошибка больше
-            l_dis = 0.5 * (tf.reduce_mean(-tf.math.log(dis_real_output + 1e-8)) +
-                           tf.reduce_mean(-tf.math.log(1. - dis_fake_output + 1e-8)))
+            l_dis = (tf.reduce_mean(-tf.math.log(dis_real_output + 1e-8)) +
+                     tf.reduce_mean(-tf.math.log(1. - dis_fake_output + 1e-8)))
+
+        with tf.GradientTape() as gen_tape:
+            generated_images = self.generator([noise, labels], training=True)
+            dis_fake_output = self.discriminator([generated_images, labels], training=False)
 
             # Чем более реалистичная картина (для дискриминатора), тем меньше ошибка
             l_gen = tf.reduce_mean(-tf.math.log(dis_fake_output + 1e-8))
@@ -235,7 +230,7 @@ class CCGAN():
 
         get_batch = self.batch_gen(dataset=dataset)
 
-        epoch_count = 1
+        epoch_count = 0
         all_l_dis = [0]
         all_l_gen = [0]
 
@@ -246,13 +241,17 @@ class CCGAN():
             all_l_dis.append(l_dis)
 
             # Сохраняем генерируемые образцы каждую эпоху
-            if learn_iter % 25 == 0:
+            if learn_iter % 1000 == 0:
                 self.sample_images(epoch_count)
 
                 # Вывод прогресса и средних ошибок
                 print(f"{epoch_count:02} \t"
                       f"[Dis loss: {np.mean(all_l_dis):.3f}] \t"
                       f"[Gen loss: {np.mean(all_l_gen):.3f}]")
+
+                # Останавливаем обучение, если что-то идёт не так
+                if np.isnan(np.mean(all_l_dis)) or np.isnan(np.mean(all_l_gen)):
+                    exit()
 
                 epoch_count += 1
                 all_l_dis = [0]
@@ -270,4 +269,4 @@ print("Sum:          ", f"{ccgan.generator.count_params() + ccgan.discriminator.
 #     print("Нет изображений")
 delete_images()
 
-ccgan.train(batch_size=64, dataset="big_flowers_dataset")
+ccgan.train(batch_size=1, dataset="flowers_dataset")

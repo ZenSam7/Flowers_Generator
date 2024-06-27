@@ -1,4 +1,3 @@
-#%%
 from tensorflow import keras
 import tensorflow as tf
 
@@ -12,14 +11,12 @@ import numpy as np
 from random import randint
 
 import matplotlib.pyplot as plt
-#%% raw
-Создаём датасет с цветочками
-#%%
-# Константы
+
 img_side = 252
 
+
 # Разбиваем датасет на тренировочную группу и группу валидации
-def init_data_with_batch_size(batch_size, dataset="flowers"):
+def init_data_with_batch_size(batch_size, dataset="flowers_dataset"):
     """Чтобы использовать "new_flowers" (расширенный датасет) надо запустить increasing_data.py"""
     train_data = keras.preprocessing.image_dataset_from_directory(
         dataset,
@@ -31,7 +28,8 @@ def init_data_with_batch_size(batch_size, dataset="flowers"):
 
     # Добавляем лейблы (т.к. у нас Cvcae)
     return train_data.map(lambda x, y: (x/255., y))
-#%%
+
+
 # Константы
 filters = 80   # Верхняя граница
 dropout = 0.0
@@ -57,8 +55,6 @@ class Sampling(keras.layers.Layer):
 
 
 """Энкодер"""
-
-
 encoder_input = Input(shape=(img_side, img_side, 3), name="encoder_input")
 x = encoder_input
 
@@ -92,8 +88,6 @@ encoder = Model([encoder_input, label_input], [z_mean, z_log_var, z], name="enco
 
 
 """Декодер"""
-
-
 decoder_input = keras.Input(shape=(hidden_units,), name="decoder_input")
 
 # Добавляем метки класса
@@ -129,7 +123,7 @@ x_temp = x
 x = Reshape((filters * x_temp.shape[1], x_temp.shape[1]))(x_temp)
 x = Dropout(dropout)(x)
 x = Dense(x_temp.shape[1], activation="sigmoid")(x)
-x = Reshape((x_temp.shape[1] , x_temp.shape[1], filters))(x)
+x = Reshape((x_temp.shape[1], x_temp.shape[1], filters))(x)
 x = add([x_temp, x])
 
 decoded_img = Conv2D(3, core_size, activation="sigmoid")(x)
@@ -137,6 +131,8 @@ decoder = Model([decoder_input, label_input], decoded_img, name="decoder")
 
 
 """CVCAE"""
+
+
 class CVCAE(keras.Model):
     """Я без понятия как это работает"""
     def __init__(self, encoder, decoder, **kwargs):
@@ -172,7 +168,6 @@ class CVCAE(keras.Model):
 
             total_loss = decode_loss + bias_loss
 
-
         grads = tape.gradient(total_loss, self.trainable_weights)
         self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
 
@@ -196,13 +191,14 @@ print("Sum:    ", f"{decoder.count_params() + encoder.count_params():,}")
 
 cvcae = CVCAE(encoder, decoder, name="CVCAE")
 cvcae.compile(optimizer=Adam(1e-3))
-#%%
-data = init_data_with_batch_size(12, "flowers")
+
+data = init_data_with_batch_size(12, "flowers_dataset")
 cvcae.fit(
     data,
     epochs=100,
 )
-#%%
+
+
 def show_row_images(raw_data):
     # Ограничиваемся только 32 восстановленными изображениями (чтобы считать меньше)
     data = np.array([i[0][0] for count, i in enumerate(raw_data) if count < 22])
@@ -233,11 +229,13 @@ def show_row_images(raw_data):
     plt.tight_layout()
     plt.show()
 
-raw_data = init_data_with_batch_size(1, "flowers")
+
+raw_data = init_data_with_batch_size(1, "flowers_dataset")
 for _ in range(3):
     show_row_images(raw_data)
-#%%
-d = init_data_with_batch_size(1, "flowers")
+
+
+d = init_data_with_batch_size(1, "flowers_dataset")
 data = np.array([next(iter(d))[0][0] for _ in range(1000)])
 labels = np.array([next(iter(d))[1][0] for _ in range(1000)])
 
@@ -250,8 +248,8 @@ for _ in range(4):
     num_images = 4
 
     noise = np.random.normal(mean, std, [num_images*2, hidden_units])
-    label = np.array([ keras.utils.to_categorical(np.random.randint(0, 5), 5)
-                       for _ in range(num_images*2)])
+    label = np.array([keras.utils.to_categorical(np.random.randint(0, 5), 5)
+                      for _ in range(num_images*2)])
     generated_images = np.array(decoder.predict([noise, label], verbose=False))
 
     plt.figure(figsize=(20, 11))
@@ -270,14 +268,14 @@ for _ in range(4):
         plt.axis("off")
     plt.tight_layout()
     plt.show()
-#%%
+
+
 """Выводим Архитектуру"""
 encoder_img = tf.keras.utils.plot_model(encoder, to_file="./images/encoder.png", show_shapes=False, show_layer_names=False,
                                         dpi=128, show_layer_activations=False)
 
 decoder_img = tf.keras.utils.plot_model(decoder, to_file="./images/decoder.png", show_shapes=False, show_layer_names=False,
                                         dpi=128, show_layer_activations=False)
-#%%
+
 cvcae.save_weights("cvcae")
 # cvcae.load_weights("cvcae")
-#%%

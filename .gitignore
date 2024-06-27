@@ -4,3 +4,4 @@ flowers_dataset/*
 generated_flowers/*
 mnist_images
 *.gif
+*.jpg

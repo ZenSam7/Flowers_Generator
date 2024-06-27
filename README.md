@@ -36,7 +36,9 @@
 ##  
 
 Пример картинок:
-
-![](./images/example_flower.png)
+![](./images/Сгенерированные цветочки.png)
 
 ![](./images/example_mnist.png)
+
+(это просто автоэнкодер, он почти не генерирет, а только восстанавливает)
+![](./images/example_flower.png)
