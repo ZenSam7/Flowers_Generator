@@ -36,7 +36,8 @@
 ##  
 
 Пример картинок:
-![](./images/Сгенерированные цветочки.png)
+
+![](./images/generated_flowers.png)
 
 ![](./images/example_mnist.png)
 
