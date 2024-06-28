@@ -66,17 +66,17 @@ class CCGAN():
         self.NUM_CLASSES = 5  # Не менять!
 
         # Входные форматы
-        self.IMG_SHAPE = (192, 192, 3)
+        self.IMG_SHAPE = (160, 160, 3)
         self.LATENT_DIM = 16
 
         # Константы
-        self.FILTERS_DIS = 6  # Нижняя граница
+        self.FILTERS_DIS = 16  # Нижняя граница
         self.FILTERS_GEN = -1  # Нижняя граница
         # self.HIDDEN_IMG_SHAPE = (12, 12, 1)
         self.DROPOUT = 0.0
 
         self.DIS_LAYERS = 5
-        self.GEN_LAYERS = 1
+        self.GEN_LAYERS = 2
 
         """
         Генератор и Дискриминатор
@@ -103,7 +103,7 @@ class CCGAN():
         self.ccgan = Model([self.latent_space_inp, self.label_inp], self.dis_gen_z, name="CCGAN")
 
         self.optimizer_gen = Adam(1e-4)
-        self.optimizer_dis = Adam(1e-4)
+        self.optimizer_dis = Adam(2e-5)
 
     def build_discriminator(self) -> Model:
         # Объединяем картинку с лейблами
@@ -113,16 +113,17 @@ class CCGAN():
 
         for i in range(self.DIS_LAYERS):
             x = Dropout(self.DROPOUT)(x)
-            x = Conv2D(self.FILTERS_DIS * 2 ** i, (5, 5), padding="same", activation="tanh")(x)
-            x = Conv2D(self.FILTERS_DIS * 2 ** i, (5, 5), padding="same", activation="tanh")(x)
+            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation=LeakyReLU())(x)
+            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation=LeakyReLU())(x)
+            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation=LeakyReLU())(x)
             x = AveragePooling2D()(x)
 
-        x = Conv2D(x.shape[-1] * 2, x.shape[1:3], activation="tanh")(x)
+        x = Conv2D(x.shape[-1] * 2, x.shape[1:3], activation=LeakyReLU())(x)
 
         x = Flatten()(x)
         while x.shape[-1] > 8:
             x = concatenate([self.label_inp, x])
-            x = Dense(x.shape[-1] // 2, activation="tanh")(x)
+            x = Dense(x.shape[-1] // 2, activation=LeakyReLU())(x)
 
         # Добавляем метки класса
         x = concatenate([self.label_inp, x])
@@ -137,7 +138,7 @@ class CCGAN():
             x = concatenate([x, self.label_inp])
             x = Dense(x.shape[-1]*2, activation="tanh")(x)
 
-        # TODO: Никаких нахуё свёрток и развёрток!
+        # TODO: Никаких нахуй свёрток и развёрток!
         x = Dropout(self.DROPOUT)(x)
         x = concatenate([x, self.label_inp])
         x = Dense(np.prod(self.IMG_SHAPE), activation="tanh")(x)
@@ -269,4 +270,4 @@ print("Sum:          ", f"{ccgan.generator.count_params() + ccgan.discriminator.
 #     print("Нет изображений")
 delete_images()
 
-ccgan.train(batch_size=1, dataset="flowers_dataset")
+ccgan.train(batch_size=1, dataset="big_flowers_dataset")
