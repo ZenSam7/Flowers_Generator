@@ -72,11 +72,10 @@ class CCGAN():
         # Константы
         self.FILTERS_DIS = 16  # Нижняя граница
         self.FILTERS_GEN = -1  # Нижняя граница
-        # self.HIDDEN_IMG_SHAPE = (12, 12, 1)
         self.DROPOUT = 0.0
 
         self.DIS_LAYERS = 5
-        self.GEN_LAYERS = 2
+        self.GEN_LAYERS = 5
 
         """
         Генератор и Дискриминатор
@@ -103,7 +102,7 @@ class CCGAN():
         self.ccgan = Model([self.latent_space_inp, self.label_inp], self.dis_gen_z, name="CCGAN")
 
         self.optimizer_gen = Adam(1e-4)
-        self.optimizer_dis = Adam(2e-5)
+        self.optimizer_dis = Adam(5e-5)
 
     def build_discriminator(self) -> Model:
         # Объединяем картинку с лейблами
@@ -113,17 +112,17 @@ class CCGAN():
 
         for i in range(self.DIS_LAYERS):
             x = Dropout(self.DROPOUT)(x)
-            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation=LeakyReLU())(x)
-            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation=LeakyReLU())(x)
-            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation=LeakyReLU())(x)
+            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation="selu")(x)
+            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation="selu")(x)
+            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation="selu")(x)
             x = AveragePooling2D()(x)
 
-        x = Conv2D(x.shape[-1] * 2, x.shape[1:3], activation=LeakyReLU())(x)
+        x = Conv2D(x.shape[-1] * 2, x.shape[1:3], activation="selu")(x)
 
         x = Flatten()(x)
         while x.shape[-1] > 8:
             x = concatenate([self.label_inp, x])
-            x = Dense(x.shape[-1] // 2, activation=LeakyReLU())(x)
+            x = Dense(x.shape[-1] // 2, activation="selu")(x)
 
         # Добавляем метки класса
         x = concatenate([self.label_inp, x])
@@ -136,18 +135,18 @@ class CCGAN():
         for _ in range(self.GEN_LAYERS):
             x = Dropout(self.DROPOUT)(x)
             x = concatenate([x, self.label_inp])
-            x = Dense(x.shape[-1]*2, activation="tanh")(x)
+            x = Dense(x.shape[-1], activation="selu")(x)
 
         # TODO: Никаких нахуй свёрток и развёрток!
         x = Dropout(self.DROPOUT)(x)
         x = concatenate([x, self.label_inp])
-        x = Dense(np.prod(self.IMG_SHAPE), activation="tanh")(x)
+        x = Dense(np.prod(self.IMG_SHAPE), activation="selu")(x)
         x = Reshape(self.IMG_SHAPE)(x)
 
         generated_img = Conv2D(3, (3, 3), activation="tanh", padding="same")(x)
         self.generator = Model([self.latent_space_inp, self.label_inp], generated_img, name="generator")
 
-    def batch_gen(self, dataset):
+    def train_data(self, dataset):
         """Чтобы использовать "big_flowers_dataset" (расширенный датасет) надо запустить increasing_data.py"""
         train_data = keras.preprocessing.image_dataset_from_directory(
             dataset,
@@ -157,12 +156,7 @@ class CCGAN():
             batch_size=self.batch_size,
         )
 
-        while True:
-            # Добавляем лейблы (т.к. у нас CCGAN) и нормализуем в [-1; 1], т.к. юзаем tanh
-            # (т.к. с sigmoid градиент затухает)
-            x, y = next(iter(train_data))
-            x = x / 255. * 2 - 1
-            yield x, y
+        return train_data
 
     def sample_images(self, epoch):
         row, column = 2, self.NUM_CLASSES
@@ -193,8 +187,9 @@ class CCGAN():
         plt.close()
 
     @tf.function
-    def train_step(self, images, labels):
+    def train_step(self, imgs, labels):
         noise = tf.random.normal((self.batch_size, self.LATENT_DIM))
+        images = imgs / 127.5 - 1
 
         with tf.GradientTape() as dis_tape:
             generated_images = self.generator([noise, labels], training=False)
@@ -221,42 +216,37 @@ class CCGAN():
 
         return l_gen, l_dis
 
-    def train(self, batch_size=32, dataset="flowers_dataset"):
+    def train(self, batch_size=1, dataset="flowers_dataset"):
         self.batch_size = batch_size
-        get_batch = self.batch_gen(dataset)
+        train_data = self.train_data(dataset)
+        get_batch = iter(train_data)
+        all_l_dis, all_l_gen = [], []  # Все ошибки
 
-        # Просто единицы и нули для Дискриминатора
-        valid = np.ones((batch_size, 1))
-        fake = np.zeros((batch_size, 1))
-
-        get_batch = self.batch_gen(dataset=dataset)
-
-        epoch_count = 0
-        all_l_dis = [0]
-        all_l_gen = [0]
-
-        for learn_iter in range(10 ** 10):
-            images, labels = next(get_batch)
-            l_gen, l_dis = self.train_step(images, labels)
-            all_l_gen.append(l_gen)
-            all_l_dis.append(l_dis)
-
+        for epoch in range(10 ** 10):
             # Сохраняем генерируемые образцы каждую эпоху
-            if learn_iter % 1000 == 0:
-                self.sample_images(epoch_count)
+            self.sample_images(epoch)
 
-                # Вывод прогресса и средних ошибок
-                print(f"{epoch_count:02} \t"
-                      f"[Dis loss: {np.mean(all_l_dis):.3f}] \t"
-                      f"[Gen loss: {np.mean(all_l_gen):.3f}]")
+            for _ in range(500):
+                try:
+                    images, labels = next(get_batch)
+                    l_gen, l_dis = self.train_step(images, labels)
+                    all_l_gen.append(l_gen)
+                    all_l_dis.append(l_dis)
+                except Exception as e:
+                    # Так надо, чтобы использовать любой batch_size
+                    get_batch = iter(train_data)
 
-                # Останавливаем обучение, если что-то идёт не так
-                if np.isnan(np.mean(all_l_dis)) or np.isnan(np.mean(all_l_gen)):
-                    exit()
+            # Вывод прогресса и средних ошибок
+            print(f"{epoch:02} \t"
+                  f"[Dis loss: {np.mean(all_l_dis):.3f}] \t"
+                  f"[Gen loss: {np.mean(all_l_gen):.3f}]")
 
-                epoch_count += 1
-                all_l_dis = [0]
-                all_l_gen = [0]
+            # Останавливаем обучение, если что-то идёт не так
+            if np.isnan(np.mean(all_l_dis)) or np.isnan(np.mean(all_l_gen)):
+                exit()
+
+            all_l_dis.clear()
+            all_l_gen.clear()
 
 
 ccgan = CCGAN()
@@ -270,4 +260,4 @@ print("Sum:          ", f"{ccgan.generator.count_params() + ccgan.discriminator.
 #     print("Нет изображений")
 delete_images()
 
-ccgan.train(batch_size=1, dataset="big_flowers_dataset")
+ccgan.train(batch_size=1, dataset="flowers_dataset")
