@@ -71,11 +71,12 @@ class CCGAN():
 
         # Константы
         self.FILTERS_DIS = 16  # Нижняя граница
-        self.FILTERS_GEN = -1  # Нижняя граница
-        self.DROPOUT = 0.0
 
-        self.DIS_LAYERS = 5
-        self.GEN_LAYERS = 5
+        self.DIS_LAYERS = 6
+        self.GEN_LAYERS = 6
+
+        self.optimizer_gen = Adam(4e-4)
+        self.optimizer_dis = Adam(1e-4)
 
         """
         Генератор и Дискриминатор
@@ -101,9 +102,6 @@ class CCGAN():
 
         self.ccgan = Model([self.latent_space_inp, self.label_inp], self.dis_gen_z, name="CCGAN")
 
-        self.optimizer_gen = Adam(1e-4)
-        self.optimizer_dis = Adam(5e-5)
-
     def build_discriminator(self) -> Model:
         # Объединяем картинку с лейблами
         x = Embedding(self.NUM_CLASSES, self.IMG_SHAPE[0] ** 2)(self.label_inp)
@@ -111,19 +109,18 @@ class CCGAN():
         x = concatenate([self.image_inp, x])
 
         for i in range(self.DIS_LAYERS):
-            x = Dropout(self.DROPOUT)(x)
-            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation="selu")(x)
-            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation="selu")(x)
-            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation="selu")(x)
+            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation="relu")(x)
+            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation="relu")(x)
             x = AveragePooling2D()(x)
 
-        x = Conv2D(x.shape[-1] * 2, x.shape[1:3], activation="selu")(x)
+        x = Conv2D(x.shape[-1] * 2, x.shape[1:3], activation="relu")(x)
 
         x = Flatten()(x)
         while x.shape[-1] > 8:
             x = concatenate([self.label_inp, x])
-            x = Dense(x.shape[-1] // 2, activation="selu")(x)
+            x = Dense(x.shape[-1] // 2, activation="relu")(x)
 
+        x = Flatten()(x)
         # Добавляем метки класса
         x = concatenate([self.label_inp, x])
         predict = Dense(1, activation="sigmoid")(x)
@@ -133,14 +130,12 @@ class CCGAN():
         # Разжимаем вектор шума в маленькую картинку
         x = self.latent_space_inp
         for _ in range(self.GEN_LAYERS):
-            x = Dropout(self.DROPOUT)(x)
             x = concatenate([x, self.label_inp])
-            x = Dense(x.shape[-1], activation="selu")(x)
+            x = Dense(x.shape[-1] - self.NUM_CLASSES, activation="tanh")(x)
 
         # TODO: Никаких нахуй свёрток и развёрток!
-        x = Dropout(self.DROPOUT)(x)
         x = concatenate([x, self.label_inp])
-        x = Dense(np.prod(self.IMG_SHAPE), activation="selu")(x)
+        x = Dense(np.prod(self.IMG_SHAPE), activation="tanh")(x)
         x = Reshape(self.IMG_SHAPE)(x)
 
         generated_img = Conv2D(3, (3, 3), activation="tanh", padding="same")(x)
@@ -205,7 +200,9 @@ class CCGAN():
             dis_fake_output = self.discriminator([generated_images, labels], training=False)
 
             # Чем более реалистичная картина (для дискриминатора), тем меньше ошибка
-            l_gen = tf.reduce_mean(-tf.math.log(dis_fake_output + 1e-8))
+            # И учим Генератор делать просто более реалистичные изображения
+            l_gen = tf.reduce_mean(-tf.math.log(dis_fake_output + 1e-8)) + \
+                    0.1*tf.losses.mae(images, generated_images)
 
         # Получаем и применяем градиенты
         grads_dis = dis_tape.gradient(l_dis, self.discriminator.trainable_variables)
@@ -222,11 +219,8 @@ class CCGAN():
         get_batch = iter(train_data)
         all_l_dis, all_l_gen = [], []  # Все ошибки
 
-        for epoch in range(10 ** 10):
-            # Сохраняем генерируемые образцы каждую эпоху
-            self.sample_images(epoch)
-
-            for _ in range(500):
+        for epoch in range(1, 10 ** 10):
+            for _ in range(1000 // batch_size):
                 try:
                     images, labels = next(get_batch)
                     l_gen, l_dis = self.train_step(images, labels)
@@ -235,6 +229,9 @@ class CCGAN():
                 except Exception as e:
                     # Так надо, чтобы использовать любой batch_size
                     get_batch = iter(train_data)
+
+            # Сохраняем генерируемые образцы каждую эпоху
+            self.sample_images(epoch)
 
             # Вывод прогресса и средних ошибок
             print(f"{epoch:02} \t"
