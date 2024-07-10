@@ -2,6 +2,7 @@ from tensorflow import keras
 import tensorflow as tf
 
 from keras.layers import *
+import keras.activations as act
 from keras.models import Model, Sequential
 from keras.optimizers import Adam, RMSprop
 import keras.backend as K
@@ -66,16 +67,16 @@ class CCGAN():
         self.NUM_CLASSES = 5  # Не менять!
 
         # Входные форматы
-        self.IMG_SHAPE = (160, 160, 3)
+        self.IMG_SHAPE = (180, 180, 3)
         self.LATENT_DIM = 16
 
         # Константы
-        self.FILTERS_DIS = 16  # Нижняя граница
+        self.FILTERS_DIS = 10  # Нижняя граница
 
         self.DIS_LAYERS = 6
         self.GEN_LAYERS = 6
 
-        self.optimizer_gen = Adam(4e-4)
+        self.optimizer_gen = Adam(1e-3)
         self.optimizer_dis = Adam(1e-4)
 
         """
@@ -109,21 +110,20 @@ class CCGAN():
         x = concatenate([self.image_inp, x])
 
         for i in range(self.DIS_LAYERS):
-            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation="relu")(x)
-            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation="relu")(x)
+            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation=LeakyReLU(0.1), kernel_regularizer="l1_l2")(x)
+            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation=LeakyReLU(0.1), kernel_regularizer="l1_l2")(x)
             x = AveragePooling2D()(x)
 
-        x = Conv2D(x.shape[-1] * 2, x.shape[1:3], activation="relu")(x)
+        x = Conv2D(x.shape[-1] *2, x.shape[1:3], activation=LeakyReLU(0.1), kernel_regularizer="l1_l2")(x)
 
         x = Flatten()(x)
         while x.shape[-1] > 8:
             x = concatenate([self.label_inp, x])
-            x = Dense(x.shape[-1] // 2, activation="relu")(x)
+            x = Dense(x.shape[-1] // 2, activation=LeakyReLU(0.1), kernel_regularizer="l1_l2")(x)
 
-        x = Flatten()(x)
-        # Добавляем метки класса
+        # Определяем вероятность, что это изображение реально
         x = concatenate([self.label_inp, x])
-        predict = Dense(1, activation="sigmoid")(x)
+        predict = Dense(1, activation="sigmoid", kernel_regularizer="l1_l2")(x)
         self.discriminator = Model([self.image_inp, self.label_inp], predict, name="discriminator")
 
     def build_generator(self) -> Model:
@@ -151,7 +151,9 @@ class CCGAN():
             batch_size=self.batch_size,
         )
 
-        return train_data
+        while 1:
+            for i in iter(train_data):
+                yield i
 
     def sample_images(self, epoch):
         row, column = 2, self.NUM_CLASSES
@@ -200,9 +202,7 @@ class CCGAN():
             dis_fake_output = self.discriminator([generated_images, labels], training=False)
 
             # Чем более реалистичная картина (для дискриминатора), тем меньше ошибка
-            # И учим Генератор делать просто более реалистичные изображения
-            l_gen = tf.reduce_mean(-tf.math.log(dis_fake_output + 1e-8)) + \
-                    0.1*tf.losses.mae(images, generated_images)
+            l_gen = tf.reduce_mean(-tf.math.log(dis_fake_output + 1e-8))
 
         # Получаем и применяем градиенты
         grads_dis = dis_tape.gradient(l_dis, self.discriminator.trainable_variables)
@@ -215,20 +215,15 @@ class CCGAN():
 
     def train(self, batch_size=1, dataset="flowers_dataset"):
         self.batch_size = batch_size
-        train_data = self.train_data(dataset)
-        get_batch = iter(train_data)
+        get_batch = self.train_data(dataset)
         all_l_dis, all_l_gen = [], []  # Все ошибки
 
         for epoch in range(1, 10 ** 10):
-            for _ in range(1000 // batch_size):
-                try:
-                    images, labels = next(get_batch)
-                    l_gen, l_dis = self.train_step(images, labels)
-                    all_l_gen.append(l_gen)
-                    all_l_dis.append(l_dis)
-                except Exception as e:
-                    # Так надо, чтобы использовать любой batch_size
-                    get_batch = iter(train_data)
+            for _ in range(2000 // batch_size):
+                images, labels = next(get_batch)
+                l_gen, l_dis = self.train_step(images, labels)
+                all_l_gen.append(l_gen)
+                all_l_dis.append(l_dis)
 
             # Сохраняем генерируемые образцы каждую эпоху
             self.sample_images(epoch)
@@ -240,7 +235,7 @@ class CCGAN():
 
             # Останавливаем обучение, если что-то идёт не так
             if np.isnan(np.mean(all_l_dis)) or np.isnan(np.mean(all_l_gen)):
-                exit()
+                return
 
             all_l_dis.clear()
             all_l_gen.clear()
