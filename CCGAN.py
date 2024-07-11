@@ -71,13 +71,13 @@ class CCGAN():
         self.LATENT_DIM = 16
 
         # Константы
-        self.FILTERS_DIS = 10  # Нижняя граница
+        self.FILTERS_DIS = 16  # Нижняя граница
 
         self.DIS_LAYERS = 6
-        self.GEN_LAYERS = 6
+        self.GEN_LAYERS = 5
 
-        self.optimizer_gen = Adam(1e-3)
-        self.optimizer_dis = Adam(1e-4)
+        self.optimizer_gen = Adam(2e-4)
+        self.optimizer_dis = Adam(2e-5)
 
         """
         Генератор и Дискриминатор
@@ -110,20 +110,19 @@ class CCGAN():
         x = concatenate([self.image_inp, x])
 
         for i in range(self.DIS_LAYERS):
-            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation=LeakyReLU(0.1), kernel_regularizer="l1_l2")(x)
-            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation=LeakyReLU(0.1), kernel_regularizer="l1_l2")(x)
+            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation=LeakyReLU(0.1))(x)
             x = AveragePooling2D()(x)
 
-        x = Conv2D(x.shape[-1] *2, x.shape[1:3], activation=LeakyReLU(0.1), kernel_regularizer="l1_l2")(x)
+        x = Conv2D(x.shape[-1] *2, x.shape[1:3], activation=LeakyReLU(0.1))(x)
 
         x = Flatten()(x)
         while x.shape[-1] > 8:
             x = concatenate([self.label_inp, x])
-            x = Dense(x.shape[-1] // 2, activation=LeakyReLU(0.1), kernel_regularizer="l1_l2")(x)
+            x = Dense(x.shape[-1] // 2, activation=LeakyReLU(0.1))(x)
 
         # Определяем вероятность, что это изображение реально
         x = concatenate([self.label_inp, x])
-        predict = Dense(1, activation="sigmoid", kernel_regularizer="l1_l2")(x)
+        predict = Dense(1, activation="sigmoid")(x)
         self.discriminator = Model([self.image_inp, self.label_inp], predict, name="discriminator")
 
     def build_generator(self) -> Model:
@@ -153,6 +152,9 @@ class CCGAN():
 
         while 1:
             for i in iter(train_data):
+                if i[1].shape[0] != self.batch_size:
+                    break
+
                 yield i
 
     def sample_images(self, epoch):
@@ -252,4 +254,4 @@ print("Sum:          ", f"{ccgan.generator.count_params() + ccgan.discriminator.
 #     print("Нет изображений")
 delete_images()
 
-ccgan.train(batch_size=1, dataset="flowers_dataset")
+ccgan.train(batch_size=16, dataset="flowers_dataset")
