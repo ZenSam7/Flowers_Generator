@@ -18,7 +18,7 @@ class CGAN():
         # Входные форматы
         self.IMG_SHAPE = (28, 28, 1)
         self.NUM_CLASSES = 10
-        self.LATENT_DIM = 1
+        self.LATENT_DIM = 8
 
         """
         Генератор и Дискриминатор
@@ -45,8 +45,8 @@ class CGAN():
         self.cgan_model = Model([self.latent_space_inp, self.label_inp], self.dis_gen_z, name="CGAN")
         self.cgan = self.cgan_model([self.latent_space_inp, self.label_inp])
 
-        self.optimizer_gen = Adam(5e-4)  # У Генератора больше
-        self.optimizer_dis = Adam(5e-6)  # У Дискриминатора меньше (чтоб не душил Генератор)
+        self.optimizer_gen = Adam(1e-4)  # У Генератора больше
+        self.optimizer_dis = Adam(1e-5)  # У Дискриминатора меньше (чтоб не душил Генератор)
 
     def build_generator(self) -> Model:
         # Мучаемся со входом

@@ -61,23 +61,23 @@ def delete_images():
         os.remove(f"{flowers_path}/{i}")
 
 
-class CCGAN():
+class CCGAN(): 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.NUM_CLASSES = 5  # Не менять!
+        self.NUM_CLASSES = 5  # Количество папок в датасете
 
         # Входные форматы
         self.IMG_SHAPE = (180, 180, 3)
-        self.LATENT_DIM = 16
+        self.LATENT_DIM = 8
 
         # Константы
         self.FILTERS_DIS = 16  # Нижняя граница
 
         self.DIS_LAYERS = 6
-        self.GEN_LAYERS = 5
+        self.GEN_LAYERS = 4
 
-        self.optimizer_gen = Adam(2e-4)
-        self.optimizer_dis = Adam(2e-5)
+        self.optimizer_gen = Adam(4e-4)
+        self.optimizer_dis = Adam(4e-5)
 
         """
         Генератор и Дискриминатор
@@ -130,7 +130,7 @@ class CCGAN():
         x = self.latent_space_inp
         for _ in range(self.GEN_LAYERS):
             x = concatenate([x, self.label_inp])
-            x = Dense(x.shape[-1] - self.NUM_CLASSES, activation="tanh")(x)
+            x = Dense(x.shape[-1], activation="tanh")(x)
 
         # TODO: Никаких нахуй свёрток и развёрток!
         x = concatenate([x, self.label_inp])
@@ -158,7 +158,7 @@ class CCGAN():
                 yield i
 
     def sample_images(self, epoch):
-        row, column = 2, self.NUM_CLASSES
+        row, column = 3, self.NUM_CLASSES
         noise = np.random.normal(0, 1, (row * column, self.LATENT_DIM))
         label = np.array([
             np.arange(0, self.NUM_CLASSES) for _ in range(row)
@@ -171,14 +171,14 @@ class CCGAN():
         gen_imgs /= np.max(gen_imgs)
 
         # Делаем картинку
-        fig, axs = plt.subplots(row, column, figsize=(12, 6))
+        fig, axs = plt.subplots(row, column, figsize=(12, 9))
         fig.subplots_adjust(left=0, right=1, top=1, bottom=0, wspace=0.0, hspace=0.0)
 
         count = 0
         for i in range(row):
             for j in range(column):
                 axs[i, j].imshow(gen_imgs[count, :, :, :])
-                axs[i, j].set_title(label[count][0])
+                axs[i, j].set_title("")#label[count][0])
                 axs[i, j].axis("off")
                 count += 1
 
@@ -254,4 +254,5 @@ print("Sum:          ", f"{ccgan.generator.count_params() + ccgan.discriminator.
 #     print("Нет изображений")
 delete_images()
 
-ccgan.train(batch_size=16, dataset="flowers_dataset")
+# batch_size ТОЛЬКО 1 !!!
+ccgan.train(batch_size=1, dataset="flowers_dataset")
