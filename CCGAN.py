@@ -61,7 +61,7 @@ def delete_images():
         os.remove(f"{flowers_path}/{i}")
 
 
-class CCGAN(): 
+class CCGAN():
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.NUM_CLASSES = 5  # Количество папок в датасете
@@ -111,7 +111,7 @@ class CCGAN():
 
         for i in range(self.DIS_LAYERS):
             x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation=LeakyReLU(0.1))(x)
-            x = AveragePooling2D()(x)
+            x = AveragePooling2D((2, 2))(x)
 
         x = Conv2D(x.shape[-1] *2, x.shape[1:3], activation=LeakyReLU(0.1))(x)
 
