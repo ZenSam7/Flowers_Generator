@@ -43,7 +43,6 @@ z = Sampling()([z_mean, z_log_var])
 encoder = keras.Model(encoder_inputs, [z_mean, z_log_var, z], name="encoder")
 encoder.summary()
 
-
 # Build the decoder
 latent_inputs = keras.Input(shape=(latent_dim,))
 x = layers.Dense(7 * 7 * 64, activation="relu")(latent_inputs)
@@ -104,13 +103,14 @@ class VAE(keras.Model):
 
 # Train the VAE
 (x_train, _), (x_test, _) = keras.datasets.mnist.load_data()
-mnist_digits = np.concatenate([x_train, x_test], axis=0)  # Объединяем тренировочную и тестовую выборку
+mnist_digits = np.concatenate(
+    [x_train, x_test], axis=0
+)  # Объединяем тренировочную и тестовую выборку
 mnist_digits = np.expand_dims(mnist_digits, -1).astype("float32") / 255
 
 vae = VAE(encoder, decoder)
 vae.compile(optimizer=keras.optimizers.Adam())
 vae.fit(mnist_digits, epochs=25, batch_size=1024)
-
 
 # Display a grid of sampled digits
 import matplotlib.pyplot as plt
@@ -132,8 +132,8 @@ def plot_latent_space(vae, n=40, figsize=15):
             x_decoded = vae.decoder.predict(z_sample, verbose=0)
             digit = x_decoded[0].reshape(digit_size, digit_size)
             figure[
-                i * digit_size: (i + 1) * digit_size,
-                j * digit_size: (j + 1) * digit_size,
+                i * digit_size : (i + 1) * digit_size,
+                j * digit_size : (j + 1) * digit_size,
             ] = digit
 
     plt.figure(figsize=(figsize, figsize))

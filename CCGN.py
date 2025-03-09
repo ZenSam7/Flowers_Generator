@@ -1,17 +1,11 @@
-from tensorflow import keras
-import tensorflow as tf
-
-from keras.layers import *
-from keras.models import Model
-from keras.optimizers import Adam, RMSprop
-import keras.backend as K
-
-from math import log2
-import numpy as np
-from random import randint
+import os
 
 import matplotlib.pyplot as plt
-import os
+import numpy as np
+from keras.layers import *
+from keras.models import Model
+from keras.optimizers import Adam
+from tensorflow import keras
 
 img_shape = 190
 batch_size = 1
@@ -22,7 +16,7 @@ hidden_img = (3, 3, 1)
 amount_layers = 6
 filters = 16  # Нижняя граница
 
-
+"""Чтобы использовать "big_flowers_dataset" (расширенный датасет) надо запустить increasing_data.py"""
 train_data = keras.preprocessing.image_dataset_from_directory(
     "flowers_dataset",
     image_size=(img_shape, img_shape),
@@ -33,11 +27,10 @@ train_data = keras.preprocessing.image_dataset_from_directory(
 
 
 def batch_generator():
-    """Чтобы использовать "big_flowers_dataset" (расширенный датасет) надо запустить increasing_data.py"""
     for _ in range(epoches):
         # Добавляем лейблы и нормализуем в [-1; 1]
         x, y = next(iter(train_data))
-        x = x / 255. * 2 - 1
+        x = x / 255.0 * 2 - 1
         noise = np.random.normal(0, 1, (batch_size, noise_units))
         yield [noise, y], x
 
@@ -46,7 +39,6 @@ flowers_path = "./generated_flowers"
 # Удаляем все прошлые изображения
 for i in os.listdir(flowers_path):
     os.remove(f"{flowers_path}/{i}")
-
 
 """Просто строим генератор"""
 generator_input = keras.Input(shape=(noise_units,), name="decoder_input")
@@ -62,7 +54,9 @@ x = Reshape(hidden_img)(x)
 # Расширяем карту признаков, увеличиваем картинку и количество фильтров
 for i in range(amount_layers - 1, -1, -1):
     # x = Dropout(0.2)(BatchNormalization()(x))
-    x = Conv2DTranspose(filters * 2**i, (4, 4), strides=2, padding="same", activation=LeakyReLU())(x)
+    x = Conv2DTranspose(
+        filters * 2**i, (4, 4), strides=2, padding="same", activation=LeakyReLU()
+    )(x)
 
 generated_img = Conv2D(3, (3, 3), activation="tanh")(x)
 generator = Model([generator_input, label_input], generated_img, name="decoder")
@@ -70,7 +64,6 @@ generator = Model([generator_input, label_input], generated_img, name="decoder")
 # Выводим количество параметров
 generator.summary()
 generator.compile(optimizer=Adam(1e-3), loss="mae")
-
 
 """Выводим изображения каждые ... эпох"""
 for epoch in range(10**10):
@@ -80,9 +73,7 @@ for epoch in range(10**10):
     # Выводим
     row, column = 2, 5
     noise = np.random.normal(0, 1, (row * column, noise_units))
-    label = np.array([
-        np.arange(0, 5) for _ in range(row)
-    ]).reshape((-1, 1))
+    label = np.array([np.arange(0, 5) for _ in range(row)]).reshape((-1, 1))
     sampled_labels = keras.utils.to_categorical(label, 5)
 
     gen_imgs = generator.predict([noise, sampled_labels], verbose=False)
@@ -102,5 +93,7 @@ for epoch in range(10**10):
             axs[i, j].axis("off")
             count += 1
 
-    fig.savefig(f"{flowers_path}/%d.png" % epoch, dpi=400, bbox_inches="tight", pad_inches=0)
+    fig.savefig(
+        f"{flowers_path}/%d.png" % epoch, dpi=400, bbox_inches="tight", pad_inches=0
+    )
     plt.close()

@@ -1,23 +1,20 @@
-from tensorflow import keras
-import tensorflow as tf
-
-from keras.layers import *
-from keras.models import Model
-from keras.optimizers import Adam, RMSprop
-import keras.backend as K
-
-from math import log2
-import numpy as np
 from random import randint
 
+import keras.backend as K
 import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+from keras.layers import *
+from keras.models import Model
+from keras.optimizers import Adam
+from tensorflow import keras
 
 img_side = 252
 
 
 # Разбиваем датасет на тренировочную группу и группу валидации
 def init_data_with_batch_size(batch_size, dataset="flowers_dataset"):
-    """Чтобы использовать "new_flowers" (расширенный датасет) надо запустить increasing_data.py"""
+    """Чтобы использовать "big_flowers_dataset" (расширенный датасет) надо запустить increasing_data.py"""
     train_data = keras.preprocessing.image_dataset_from_directory(
         dataset,
         image_size=(img_side, img_side),
@@ -27,11 +24,11 @@ def init_data_with_batch_size(batch_size, dataset="flowers_dataset"):
     )
 
     # Добавляем лейблы (т.к. у нас Cvcae)
-    return train_data.map(lambda x, y: (x/255., y))
+    return train_data.map(lambda x, y: (x / 255.0, y))
 
 
 # Константы
-filters = 80   # Верхняя граница
+filters = 80  # Верхняя граница
 dropout = 0.0
 hidden_units = 32
 hidden_img_shape = [32, 32]
@@ -86,7 +83,6 @@ z = Sampling(name="z")([z_mean, z_log_var])
 
 encoder = Model([encoder_input, label_input], [z_mean, z_log_var, z], name="encoder")
 
-
 """Декодер"""
 decoder_input = keras.Input(shape=(hidden_units,), name="decoder_input")
 
@@ -111,7 +107,7 @@ x = Dense(hidden_img_shape[0] * hidden_img_shape[1], activation=LeakyReLU())(x)
 x = Reshape(hidden_img_shape + [1])(x)
 
 # Расширяем карту признаков, увеличиваем картинку и количество фильтров
-for i in range(amount_decode_layers-1, -1, -1):
+for i in range(amount_decode_layers - 1, -1, -1):
     x = Dropout(dropout)(x)
     x = UpSampling2D()(x)
     # x = Conv2D(filters // 2**i, core_size, activation=LeakyReLU())(x)
@@ -129,20 +125,18 @@ x = add([x_temp, x])
 decoded_img = Conv2D(3, core_size, activation="sigmoid")(x)
 decoder = Model([decoder_input, label_input], decoded_img, name="decoder")
 
-
 """CVCAE"""
 
 
 class CVCAE(keras.Model):
     """Я без понятия как это работает"""
+
     def __init__(self, encoder, decoder, **kwargs):
         super().__init__(**kwargs)
         self.encoder = encoder
         self.decoder = decoder
         self.total_loss_tracker = keras.metrics.Mean(name="total_loss")
-        self.decode_loss_tracker = keras.metrics.Mean(
-            name="decode_loss"
-        )
+        self.decode_loss_tracker = keras.metrics.Mean(name="decode_loss")
         self.bias_loss_tracker = keras.metrics.Mean(name="bias_loss")
 
     @property
@@ -158,7 +152,7 @@ class CVCAE(keras.Model):
             z_mean, z_log_var, z = self.encoder(data)
             decoded = self.decoder([z, data[1]])
             decode_loss = K.mean(
-                    keras.losses.binary_crossentropy(data[0], decoded),
+                keras.losses.binary_crossentropy(data[0], decoded),
             )
             bias_loss = -0.5 * (1 + z_log_var - K.square(z_mean) - K.exp(z_log_var))
             bias_loss = K.mean(bias_loss, axis=1)
@@ -211,7 +205,7 @@ def show_row_images(raw_data):
     plt.figure(figsize=(20, 11))
 
     for _ in range(num_images):
-        random_num = randint(0, 22-1)
+        random_num = randint(0, 22 - 1)
 
         # Оригинальное изображение
         plt.subplot(2, num_images, _ + 1)
@@ -234,7 +228,6 @@ raw_data = init_data_with_batch_size(1, "flowers_dataset")
 for _ in range(3):
     show_row_images(raw_data)
 
-
 d = init_data_with_batch_size(1, "flowers_dataset")
 data = np.array([next(iter(d))[0][0] for _ in range(1000)])
 labels = np.array([next(iter(d))[1][0] for _ in range(1000)])
@@ -247,9 +240,13 @@ print("std  (ideal: 1):", std)
 for _ in range(4):
     num_images = 4
 
-    noise = np.random.normal(mean, std, [num_images*2, hidden_units])
-    label = np.array([keras.utils.to_categorical(np.random.randint(0, 5), 5)
-                      for _ in range(num_images*2)])
+    noise = np.random.normal(mean, std, [num_images * 2, hidden_units])
+    label = np.array(
+        [
+            keras.utils.to_categorical(np.random.randint(0, 5), 5)
+            for _ in range(num_images * 2)
+        ]
+    )
     generated_images = np.array(decoder.predict([noise, label], verbose=False))
 
     plt.figure(figsize=(20, 11))
@@ -269,13 +266,24 @@ for _ in range(4):
     plt.tight_layout()
     plt.show()
 
-
 """Выводим Архитектуру"""
-encoder_img = tf.keras.utils.plot_model(encoder, to_file="./images/encoder.png", show_shapes=False, show_layer_names=False,
-                                        dpi=128, show_layer_activations=False)
+encoder_img = tf.keras.utils.plot_model(
+    encoder,
+    to_file="./images/encoder.png",
+    show_shapes=False,
+    show_layer_names=False,
+    dpi=128,
+    show_layer_activations=False,
+)
 
-decoder_img = tf.keras.utils.plot_model(decoder, to_file="./images/decoder.png", show_shapes=False, show_layer_names=False,
-                                        dpi=128, show_layer_activations=False)
+decoder_img = tf.keras.utils.plot_model(
+    decoder,
+    to_file="./images/decoder.png",
+    show_shapes=False,
+    show_layer_names=False,
+    dpi=128,
+    show_layer_activations=False,
+)
 
 cvcae.save_weights("cvcae")
 # cvcae.load_weights("cvcae")

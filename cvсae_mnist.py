@@ -14,6 +14,7 @@ import keras.backend as K
 
 ## Create a sampling layer
 
+
 class Sampling(layers.Layer):
     """Uses (z_mean, z_log_var) to sample z, the vector encoding a digit."""
 
@@ -47,9 +48,10 @@ x = layers.concatenate([x, label_inputs])
 z_mean = layers.Dense(latent_dim, name="z_mean")(x)
 z_log_var = layers.Dense(latent_dim, name="z_log_var")(x)
 z = Sampling()([z_mean, z_log_var])
-encoder = keras.Model([encoder_inputs, label_inputs], [z_mean, z_log_var, z], name="encoder")
+encoder = keras.Model(
+    [encoder_inputs, label_inputs], [z_mean, z_log_var, z], name="encoder"
+)
 encoder.summary()
-
 
 ## Build the decoder
 
@@ -68,6 +70,7 @@ decoder.summary()
 
 
 ## Define the VAE as a `Model` with a custom `train_step`
+
 
 class VAE(keras.Model):
     def __init__(self, encoder, decoder, **kwargs):
@@ -130,7 +133,6 @@ vae = VAE(encoder, decoder)
 vae.compile(optimizer=keras.optimizers.Adam())
 vae.fit([mnist_digits, mnist_labels], epochs=25, batch_size=1024)
 
-
 ## Display a grid of sampled digits
 
 import matplotlib.pyplot as plt
@@ -174,4 +176,3 @@ def plot_latent_space(vae, figsize=15):
 
 
 plot_latent_space(vae)
-

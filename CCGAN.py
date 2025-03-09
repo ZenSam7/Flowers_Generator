@@ -1,19 +1,14 @@
-from tensorflow import keras
-import tensorflow as tf
-
-from keras.layers import *
-import keras.activations as act
-from keras.models import Model, Sequential
-from keras.optimizers import Adam, RMSprop
-import keras.backend as K
-
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
-from matplotlib.animation import FuncAnimation, PillowWriter
-
-from PIL import Image
 import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+from PIL import Image
+from keras.layers import *
+from keras.models import Model
+from keras.optimizers import Adam
+from matplotlib.animation import FuncAnimation, PillowWriter
+from tensorflow import keras
 
 flowers_path = "./generated_flowers"
 
@@ -25,7 +20,7 @@ def make_gif():
     # Считываем все файлы изображений и сортируем их по имени
     images = sorted(
         [os.path.join(flowers_path, img) for img in os.listdir(flowers_path)],
-        key=lambda path: int(path.split("\\")[-1].split(".")[0])
+        key=lambda path: int(path.split("\\")[-1].split(".")[0]),
     )
 
     # Загружаем первое изображение для инициализации графика
@@ -61,7 +56,7 @@ def delete_images():
         os.remove(f"{flowers_path}/{i}")
 
 
-class CCGAN():
+class CCGAN:
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.NUM_CLASSES = 5  # Количество папок в датасете
@@ -101,7 +96,9 @@ class CCGAN():
         self.generated_z = self.generator([self.latent_space_inp, self.label_inp])
         self.dis_gen_z = self.discriminator([self.generated_z, self.label_inp])
 
-        self.ccgan = Model([self.latent_space_inp, self.label_inp], self.dis_gen_z, name="CCGAN")
+        self.ccgan = Model(
+            [self.latent_space_inp, self.label_inp], self.dis_gen_z, name="CCGAN"
+        )
 
     def build_discriminator(self) -> Model:
         # Объединяем картинку с лейблами
@@ -110,10 +107,15 @@ class CCGAN():
         x = concatenate([self.image_inp, x])
 
         for i in range(self.DIS_LAYERS):
-            x = Conv2D(self.FILTERS_DIS * 2 ** i, (3, 3), padding="same", activation=LeakyReLU(0.1))(x)
+            x = Conv2D(
+                self.FILTERS_DIS * 2**i,
+                (3, 3),
+                padding="same",
+                activation=LeakyReLU(0.1),
+            )(x)
             x = AveragePooling2D((2, 2))(x)
 
-        x = Conv2D(x.shape[-1] *2, x.shape[1:3], activation=LeakyReLU(0.1))(x)
+        x = Conv2D(x.shape[-1] * 2, x.shape[1:3], activation=LeakyReLU(0.1))(x)
 
         x = Flatten()(x)
         while x.shape[-1] > 8:
@@ -123,7 +125,9 @@ class CCGAN():
         # Определяем вероятность, что это изображение реально
         x = concatenate([self.label_inp, x])
         predict = Dense(1, activation="sigmoid")(x)
-        self.discriminator = Model([self.image_inp, self.label_inp], predict, name="discriminator")
+        self.discriminator = Model(
+            [self.image_inp, self.label_inp], predict, name="discriminator"
+        )
 
     def build_generator(self) -> Model:
         # Разжимаем вектор шума в маленькую картинку
@@ -138,7 +142,9 @@ class CCGAN():
         x = Reshape(self.IMG_SHAPE)(x)
 
         generated_img = Conv2D(3, (3, 3), activation="tanh", padding="same")(x)
-        self.generator = Model([self.latent_space_inp, self.label_inp], generated_img, name="generator")
+        self.generator = Model(
+            [self.latent_space_inp, self.label_inp], generated_img, name="generator"
+        )
 
     def train_data(self, dataset):
         """Чтобы использовать "big_flowers_dataset" (расширенный датасет) надо запустить increasing_data.py"""
@@ -160,9 +166,9 @@ class CCGAN():
     def sample_images(self, epoch):
         row, column = 3, self.NUM_CLASSES
         noise = np.random.normal(0, 1, (row * column, self.LATENT_DIM))
-        label = np.array([
-            np.arange(0, self.NUM_CLASSES) for _ in range(row)
-        ]).reshape((-1, 1))
+        label = np.array([np.arange(0, self.NUM_CLASSES) for _ in range(row)]).reshape(
+            (-1, 1)
+        )
         sampled_labels = keras.utils.to_categorical(label, self.NUM_CLASSES)
 
         gen_imgs = self.generator.predict([noise, sampled_labels], verbose=False)
@@ -178,11 +184,13 @@ class CCGAN():
         for i in range(row):
             for j in range(column):
                 axs[i, j].imshow(gen_imgs[count, :, :, :])
-                axs[i, j].set_title("")#label[count][0])
+                axs[i, j].set_title("")  # label[count][0])
                 axs[i, j].axis("off")
                 count += 1
 
-        fig.savefig(f"{flowers_path}/%d.png" % epoch, dpi=400, bbox_inches="tight", pad_inches=0)
+        fig.savefig(
+            f"{flowers_path}/%d.png" % epoch, dpi=400, bbox_inches="tight", pad_inches=0
+        )
         plt.close()
 
     @tf.function
@@ -193,25 +201,34 @@ class CCGAN():
         with tf.GradientTape() as dis_tape:
             generated_images = self.generator([noise, labels], training=False)
             dis_real_output = self.discriminator([images, labels], training=True)
-            dis_fake_output = self.discriminator([generated_images, labels], training=True)
+            dis_fake_output = self.discriminator(
+                [generated_images, labels], training=True
+            )
 
             # Чем настоящие картинки нереальнее или сгенерированные реальнее, тем ошибка больше
-            l_dis = (tf.reduce_mean(-tf.math.log(dis_real_output + 1e-8)) +
-                     tf.reduce_mean(-tf.math.log(1. - dis_fake_output + 1e-8)))
+            l_dis = tf.reduce_mean(
+                -tf.math.log(dis_real_output + 1e-8)
+            ) + tf.reduce_mean(-tf.math.log(1.0 - dis_fake_output + 1e-8))
 
         with tf.GradientTape() as gen_tape:
             generated_images = self.generator([noise, labels], training=True)
-            dis_fake_output = self.discriminator([generated_images, labels], training=False)
+            dis_fake_output = self.discriminator(
+                [generated_images, labels], training=False
+            )
 
             # Чем более реалистичная картина (для дискриминатора), тем меньше ошибка
             l_gen = tf.reduce_mean(-tf.math.log(dis_fake_output + 1e-8))
 
         # Получаем и применяем градиенты
         grads_dis = dis_tape.gradient(l_dis, self.discriminator.trainable_variables)
-        self.optimizer_dis.apply_gradients(zip(grads_dis, self.discriminator.trainable_variables))
+        self.optimizer_dis.apply_gradients(
+            zip(grads_dis, self.discriminator.trainable_variables)
+        )
 
         grads_gen = gen_tape.gradient(l_gen, self.generator.trainable_variables)
-        self.optimizer_gen.apply_gradients(zip(grads_gen, self.generator.trainable_variables))
+        self.optimizer_gen.apply_gradients(
+            zip(grads_gen, self.generator.trainable_variables)
+        )
 
         return l_gen, l_dis
 
@@ -220,7 +237,7 @@ class CCGAN():
         get_batch = self.train_data(dataset)
         all_l_dis, all_l_gen = [], []  # Все ошибки
 
-        for epoch in range(1, 10 ** 10):
+        for epoch in range(1, 10**10):
             for _ in range(2000 // batch_size):
                 images, labels = next(get_batch)
                 l_gen, l_dis = self.train_step(images, labels)
@@ -231,9 +248,11 @@ class CCGAN():
             self.sample_images(epoch)
 
             # Вывод прогресса и средних ошибок
-            print(f"{epoch:02} \t"
-                  f"[Dis loss: {np.mean(all_l_dis):.3f}] \t"
-                  f"[Gen loss: {np.mean(all_l_gen):.3f}]")
+            print(
+                f"{epoch:02} \t"
+                f"[Dis loss: {np.mean(all_l_dis):.3f}] \t"
+                f"[Gen loss: {np.mean(all_l_gen):.3f}]"
+            )
 
             # Останавливаем обучение, если что-то идёт не так
             if np.isnan(np.mean(all_l_dis)) or np.isnan(np.mean(all_l_gen)):
@@ -248,11 +267,12 @@ print("Generator:    ", f"{ccgan.generator.count_params():,}")
 print("Discriminator:", f"{ccgan.discriminator.count_params():,}")
 print("Sum:          ", f"{ccgan.generator.count_params() + ccgan.discriminator.count_params():,}")
 
-# try:
-#     make_gif()
-# except IndexError:
-#     print("Нет изображений")
+try:
+    make_gif()
+except IndexError:
+    print("Нет изображений")
 delete_images()
 
-# batch_size ТОЛЬКО 1 !!!
+# batch_size ТОЛЬКО 1 !!! (а то будут размазанные картинки)
+"""Чтобы использовать "big_flowers_dataset" (расширенный датасет) надо запустить increasing_data.py"""
 ccgan.train(batch_size=1, dataset="flowers_dataset")
